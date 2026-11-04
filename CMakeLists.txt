@@ -47,6 +47,13 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
             GIT_TAG 9769fdcd28a8a3fdf98f5dde6163e12c6de88563)
         FetchContent_MakeAvailable(lidar_uicore)
     endif()
+    if(NOT TARGET Lidar::ChartCore)
+        include(FetchContent)
+        FetchContent_Declare(lidar_chartcore GIT_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../ChartCore"
+            GIT_TAG d1a256590ab0ebab63a23cb18986eed4343a1fe7)
+        FetchContent_MakeAvailable(lidar_chartcore)
+    endif()
+    get_target_property(chart_dir Lidar::ChartCore QT_QML_MODULE_OUTPUT_DIRECTORY)
     get_target_property(ui_dir Lidar::UICore QT_QML_MODULE_OUTPUT_DIRECTORY)
     qt_extract_metatypes(Tcm232Device)
     qt_extract_metatypes(Tcm232Serial)
@@ -54,11 +61,11 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
     qt_add_qml_module(Tcm232Types STATIC URI Lidar.Tcm232 VERSION 1.0
         CLASS_NAME Tcm232TypesPlugin RESOURCE_PREFIX /qt/qml
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Lidar/Tcm232"
-        IMPORT_PATH "${ui_dir}/../.." DEPENDENCIES Lidar.UI
+        IMPORT_PATH "${ui_dir}/../.." "${chart_dir}/../.." DEPENDENCIES Lidar.UI Lidar.Charts
         QML_FILES Tcm232Module.qml
         SOURCES include/Tcm232QmlTypes.h)
     add_library(Lidar::Tcm232Qml ALIAS Tcm232Types)
-    target_link_libraries(Tcm232Types PUBLIC Lidar::Tcm232Device Lidar::UICore Qt6::Quick)
+    target_link_libraries(Tcm232Types PUBLIC Lidar::Tcm232Device Lidar::UICore Lidar::ChartCore Qt6::Quick)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)
@@ -85,7 +92,7 @@ if(PROJECT_IS_TOP_LEVEL)
             if(WIN32)
                 target_compile_definitions(Tcm232Types PRIVATE LIBSERIALPORT_MSBUILD)
             endif()
-            target_link_libraries(serial_delivery PRIVATE Tcm232Typesplugin Tcm232Types LidarUICoreplugin)
+            target_link_libraries(serial_delivery PRIVATE Tcm232Typesplugin Tcm232Types LidarUICoreplugin LidarChartCoreplugin)
             target_compile_definitions(serial_delivery PRIVATE TEST_TCM232_QML)
             target_sources(serial_delivery PRIVATE tests/qml.cpp)
         endif()

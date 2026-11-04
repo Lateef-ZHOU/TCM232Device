@@ -1,4 +1,6 @@
 #include <Tcm232Device.h>
+#include <LaserTelemetryItem.h>
+#include <QQmlListReference>
 #include "FakeSerialPort.h"
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -11,6 +13,7 @@
 
 Q_IMPORT_QML_PLUGIN(Tcm232TypesPlugin)
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
+Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)
 
 class ReceiverProbe final : public QObject
 {
@@ -70,6 +73,34 @@ static void verifyPage(QQmlEngine &engine)
         || report(C::TCACTTEMP) != 22 || report(C::FANACTTEMP) != 27 || report(C::FANSPEED) != 800)
         qFatal("wrong module, setting or measurement");
     if (tc->property("text") != "32.5" || fan->property("text") != "40") qFatal("reports changed drafts");
+    QQmlListReference pages(page.get(), "mainPages"), sections(page.get(), "sections");
+    if (pages.count() != 1 || sections.count() != 3
+        || sections.at(1)->property("title") != QStringLiteral("温控1")
+        || sections.at(2)->property("title") != QStringLiteral("风扇1")) qFatal("wrong page layout");
+    auto panel = [&](const char *name, const QStringList &keys) {
+        auto *item = pages.at(0)->findChild<LaserTelemetryItem *>(name);
+        if (!item || item->channelKeys() != keys) qFatal("wrong chart channels");
+        item->applyHover(1e12);
+        if (!item->hover()) qFatal("missing chart measurement");
+        return item;
+    };
+    auto *temps = panel("temperatures", {"tcTemperature", "fanTemperature"});
+    auto *volts = panel("voltage", {"outputVoltage"});
+    auto *amps = panel("currents", {"outputCurrent"});
+    if (!temps->hover()->text.contains(QStringLiteral("温控1实际温度  22.00"))
+        || !temps->hover()->text.contains(QStringLiteral("风扇1实际温度  27.00"))
+        || !volts->hover()->text.contains(QStringLiteral("实际输出电压  4.50 V"))
+        || !amps->hover()->text.contains(QStringLiteral("实际输出电流  0.60 A")))
+        qFatal("wrong legend or value");
+    const auto lastSample = temps->hover()->at;
+    Q_EMIT device->packetReceived(RxTime(std::chrono::seconds(2000000000)), {{}, Tcm232::Module::FAN1, C::FANSPEED, 888});
+    temps->applyHover(1e12);
+    if (temps->hover()->at != lastSample) qFatal("RPM added a chart sample");
+    Q_EMIT device->packetReceived(RxTime(std::chrono::seconds(2000000001)), {{}, Tcm232::Module::TC1, C::TCACTTEMP, 22.0});
+    for (auto *item : {temps, volts, amps}) {
+        item->applyHover(1e12);
+        if (item->hover()->at != 2000000001) qFatal("steady reading did not advance all plots together");
+    }
     auto click = [&](const char *name, std::vector<QByteArray> expected) {
         const auto before = FakeSerialPort::writes().size();
         if (!QMetaObject::invokeMethod(control(name), "clicked")) qFatal("click failed");

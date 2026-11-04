@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Lidar.UI
+import Lidar.Charts
 
 ModulePage {
     id: root
@@ -20,7 +21,7 @@ ModulePage {
         for (const c of tcCommands) deviceState.query(Tcm232Protocol.TC1, c)
         for (const c of fanCommands) deviceState.query(Tcm232Protocol.FAN1, c)
     }
-    function accept(packet: tcm232Packet): void {
+    function accept(at, packet: tcm232Packet): void {
         if (packet.module === Tcm232Protocol.CMD && packet.command === Tcm232Protocol.REPLY) {
             const messages = ["模块或参数名错误", "执行成功", "参数名错误", "命令被禁止", "值超出范围",
                               "未知错误", "语法错误", "校验错误", "保存成功"]
@@ -29,8 +30,21 @@ ModulePage {
         }
         const commands = packet.module === Tcm232Protocol.TC1 ? tcCommands
                        : packet.module === Tcm232Protocol.FAN1 ? fanCommands : []
-        if (!commands.includes(packet.command) || reports[packet.command] === packet.value) return
-        reports = Object.assign({}, reports, { [packet.command]: packet.value })
+        if (!commands.includes(packet.command)) return
+        if (reports[packet.command] !== packet.value)
+            reports = Object.assign({}, reports, { [packet.command]: packet.value })
+        switch (packet.command) {
+        case Tcm232Protocol.TCACTTEMP:
+        case Tcm232Protocol.FANACTTEMP:
+        case Tcm232Protocol.TCACTVOL:
+        case Tcm232Protocol.TCACTCUR:
+            chart.append(at, {
+                tcTemperature: reports[Tcm232Protocol.TCACTTEMP] ?? NaN,
+                fanTemperature: reports[Tcm232Protocol.FANACTTEMP] ?? NaN,
+                outputVoltage: reports[Tcm232Protocol.TCACTVOL] ?? NaN,
+                outputCurrent: reports[Tcm232Protocol.TCACTCUR] ?? NaN
+            })
+        }
     }
     function valueText(command: int, unit: string): string {
         const value = reports[command]
@@ -51,14 +65,17 @@ ModulePage {
         target: root.deviceState as QtObject
         function onLogMessage(text: string): void { root.logMessage(text) }
         function onConnectionChanged(phase): void {
-            if (phase === ResourcePhase.Acquired && root.deviceState.isOpen) poll.restart()
+            if (phase === ResourcePhase.Acquired && root.deviceState.isOpen) {
+                chart.clear()
+                poll.restart()
+            }
             if (phase === ResourcePhase.Released && !root.deviceState.isOpen) {
                 poll.stop()
                 root.reports = ({})
             }
         }
         function onPacketReceived(at, packet: tcm232Packet): void {
-            if (root.deviceState.isOpen) root.accept(packet)
+            if (root.deviceState.isOpen) root.accept(at, packet)
         }
     }
     component Reading: ColumnLayout {
@@ -117,52 +134,54 @@ ModulePage {
             Button { Layout.fillWidth: true; text: qsTr("连接"); onClicked: root.deviceState.open(serial.currentText) }
             Button { Layout.fillWidth: true; text: qsTr("断开"); onClicked: root.deviceState.close() }
         }
-    } ]
-    mainPages: [ Page {
-        title: qsTr("温控与风扇")
-        ScrollView {
-            id: scroll
-            anchors.fill: parent
-            contentWidth: availableWidth
+    },
+    Section {
+        title: qsTr("温控1")
+        RowLayout {
+            Layout.fillWidth: true; uniformCellSizes: true
+            Reading { caption: qsTr("实际温度"); reading: root.valueText(Tcm232Protocol.TCACTTEMP, "°C") }
+            Reading { caption: qsTr("输出电压"); reading: root.valueText(Tcm232Protocol.TCACTVOL, "V") }
+            Reading { caption: qsTr("输出电流"); reading: root.valueText(Tcm232Protocol.TCACTCUR, "A") }
+            Reading { caption: qsTr("实际输出"); reading: root.switchText(Tcm232Protocol.TCOE) }
+        }
+        MenuSeparator { Layout.fillWidth: true }
+        RowLayout {
+            Layout.fillWidth: true; uniformCellSizes: true
+            Temperature { key: "tc"; caption: qsTr("调节温度"); module: Tcm232Protocol.TC1; command: Tcm232Protocol.TCADJTEMP }
             ColumnLayout {
-                width: scroll.availableWidth
-                spacing: 12
-                Section {
-                    title: qsTr("温控1")
-                    RowLayout {
-                        Layout.fillWidth: true; uniformCellSizes: true
-                        Reading { caption: qsTr("实际温度"); reading: root.valueText(Tcm232Protocol.TCACTTEMP, "°C") }
-                        Reading { caption: qsTr("输出电压"); reading: root.valueText(Tcm232Protocol.TCACTVOL, "V") }
-                        Reading { caption: qsTr("输出电流"); reading: root.valueText(Tcm232Protocol.TCACTCUR, "A") }
-                        Reading { caption: qsTr("实际输出"); reading: root.switchText(Tcm232Protocol.TCOE) }
-                    }
-                    MenuSeparator { Layout.fillWidth: true }
-                    RowLayout {
-                        Layout.fillWidth: true; uniformCellSizes: true
-                        Temperature { key: "tc"; caption: qsTr("调节温度"); module: Tcm232Protocol.TC1; command: Tcm232Protocol.TCADJTEMP }
-                        ColumnLayout {
-                            Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
-                            Reading { caption: qsTr("输出开关"); reading: root.switchText(Tcm232Protocol.TCSW) }
-                            RowLayout {
-                                Button { objectName: "outputOn"; text: qsTr("开启"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1) }
-                                Button { text: qsTr("关闭"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0) }
-                            }
-                        }
-                    }
-                    MenuSeparator { Layout.fillWidth: true }
-                    FieldRow { label: qsTr("错误状态"); Label { objectName: "errors"; Layout.fillWidth: true; wrapMode: Text.Wrap; text: root.errorText() } }
-                }
-                Section {
-                    title: qsTr("风扇1")
-                    RowLayout {
-                        Layout.fillWidth: true; uniformCellSizes: true
-                        Reading { caption: qsTr("实际温度"); reading: root.valueText(Tcm232Protocol.FANACTTEMP, "°C") }
-                        Reading { caption: qsTr("实际转速"); reading: root.valueText(Tcm232Protocol.FANSPEED, "rpm") }
-                        Temperature { key: "fan"; caption: qsTr("启动温度"); module: Tcm232Protocol.FAN1; command: Tcm232Protocol.FANSTARTTEMP }
-                    }
+                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                Reading { caption: qsTr("输出开关"); reading: root.switchText(Tcm232Protocol.TCSW) }
+                RowLayout {
+                    Button { objectName: "outputOn"; text: qsTr("开启"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1) }
+                    Button { text: qsTr("关闭"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0) }
                 }
             }
         }
+        MenuSeparator { Layout.fillWidth: true }
+        FieldRow { label: qsTr("错误状态"); Label { objectName: "errors"; Layout.fillWidth: true; wrapMode: Text.Wrap; text: root.errorText() } }
+    }, Section {
+        title: qsTr("风扇1")
+        RowLayout {
+            Layout.fillWidth: true; uniformCellSizes: true
+            Reading { caption: qsTr("实际温度"); reading: root.valueText(Tcm232Protocol.FANACTTEMP, "°C") }
+            Reading { caption: qsTr("实际转速"); reading: root.valueText(Tcm232Protocol.FANSPEED, "rpm") }
+        }
+        Temperature { key: "fan"; caption: qsTr("启动温度"); module: Tcm232Protocol.FAN1; command: Tcm232Protocol.FANSTARTTEMP }
     } ]
-    mainMargin: 10
+    mainPages: [ Page {
+        title: qsTr("温度、电流与电压")
+        contentItem: LaserTelemetryChart {
+            id: chart
+            configuration: ({
+                windowSeconds: 120, capacity: 600,
+                temperature: { minimum: -10, maximum: 120, channels: [
+                    { key: "tcTemperature", name: qsTr("温控1实际温度") },
+                    { key: "fanTemperature", name: qsTr("风扇1实际温度") }] },
+                current: { minimum: -2, maximum: 2, channels: [
+                    { key: "outputCurrent", name: qsTr("实际输出电流") }] },
+                voltage: { minimum: -10, maximum: 10, channels: [
+                    { key: "outputVoltage", name: qsTr("实际输出电压") }] }
+            })
+        }
+    } ]
 }
