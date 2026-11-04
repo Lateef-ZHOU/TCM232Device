@@ -52,9 +52,21 @@ static void verifyPage(QQmlEngine &engine)
         if (!predicate()) qFatal("timed out waiting for page");
     };
     if (!device->open(QStringLiteral("controlled"))) qFatal("open");
-    wait([] { return FakeSerialPort::writes().size() >= 10; });
-    for (const auto &body : FakeSerialPort::writes())
-        if (!body.endsWith("?\r")) qFatal("connect must only query");
+    const std::vector<QByteArray> round{
+        "TC1:TCADJTEMP?\r", "TC1:TCACTTEMP?\r", "TC1:TCSW?\r", "TC1:TCOE?\r", "TC1:TCACTVOL?\r",
+        "TC1:TCACTCUR?\r", "TC1:TCERRORSTATUS?\r", "FAN1:FANSTARTTEMP?\r", "FAN1:FANACTTEMP?\r", "FAN1:FANSPEED?\r"};
+    QElapsedTimer gap;
+    auto next = [&](const QByteArray &expected) {
+        const auto before = FakeSerialPort::writes().size();
+        wait([&] { return FakeSerialPort::writes().size() > before; });
+        const auto bytes = FakeSerialPort::writes();
+        if (bytes.size() != before + 1 || bytes.back() != expected)
+            qFatal("expected one serial command %s, got %s", expected.constData(), bytes.back().constData());
+        if (gap.isValid() && gap.elapsed() < 55) qFatal("commands not spaced apart");
+        gap.start();
+    };
+    for (const auto &query : round) next(query);
+    next(round[0]);
     auto *tc = control("tcDraft");
     auto *fan = control("fanDraft");
     tc->setProperty("text", "32.5");
@@ -101,20 +113,31 @@ static void verifyPage(QQmlEngine &engine)
         item->applyHover(1e12);
         if (item->hover()->at != 2000000001) qFatal("steady reading did not advance all plots together");
     }
-    auto click = [&](const char *name, std::vector<QByteArray> expected) {
-        const auto before = FakeSerialPort::writes().size();
+    auto click = [&](const char *name) {
         if (!QMetaObject::invokeMethod(control(name), "clicked")) qFatal("click failed");
-        const auto writes = FakeSerialPort::writes();
-        if (std::vector<QByteArray>(writes.begin() + before, writes.end()) != expected)
-            qFatal("unexpected serial command(s) from %s", name);
     };
-    click("tcSave", {"TC1:TCADJTEMP!\r"});
-    click("fanSave", {"FAN1:FANSTARTTEMP!\r"});
-    click("tcSet", {"TC1:TCADJTEMP=32.5\r", "TC1:TCADJTEMP?\r"});
-    click("fanSet", {"FAN1:FANSTARTTEMP=40\r", "FAN1:FANSTARTTEMP?\r"});
-    click("outputOn", {"TC1:TCSW=1\r", "TC1:TCSW?\r"});
+    const auto before = FakeSerialPort::writes().size();
+    click("tcSet");
+    click("tcSave");
+    click("fanSet");
+    click("fanSave");
+    click("outputOn");
+    tc->setProperty("text", "99");
+    if (FakeSerialPort::writes().size() != before) qFatal("button bypassed timer");
+    next("TC1:TCADJTEMP=32.5\r");
+    next("TC1:TCADJTEMP!\r");
+    next("FAN1:FANSTARTTEMP=40\r");
+    next("FAN1:FANSTARTTEMP!\r");
+    next("TC1:TCSW=1\r");
+    next(round[1]); // 无设后回查，也不重启当前轮。
+    click("outputOn");
     device->close();
     wait([&] { return control("errors")->property("text").toString() == QStringLiteral("—"); });
+    click("tcSave");
+    if (!device->open(QStringLiteral("controlled"))) qFatal("reopen");
+    gap.invalidate();
+    next(round[0]); // 关闭前和离线时点击的命令均不在新连接中重放。
+    device->close();
 }
 
 void verifyQml()

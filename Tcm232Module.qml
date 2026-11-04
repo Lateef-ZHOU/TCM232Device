@@ -17,9 +17,29 @@ ModulePage {
         Tcm232Protocol.TCERRORSTATUS]
     readonly property list<int> fanCommands: [Tcm232Protocol.FANSTARTTEMP, Tcm232Protocol.FANACTTEMP, Tcm232Protocol.FANSPEED]
     property var reports: ({})
-    function refresh(): void {
-        for (const c of tcCommands) deviceState.query(Tcm232Protocol.TC1, c)
-        for (const c of fanCommands) deviceState.query(Tcm232Protocol.FAN1, c)
+    property var pending: []
+    function refill(): void {
+        for (const c of tcCommands) pending.push({ op: "?", module: Tcm232Protocol.TC1, command: c })
+        for (const c of fanCommands) pending.push({ op: "?", module: Tcm232Protocol.FAN1, command: c })
+    }
+    function queueManual(op: string, module: int, command: int, value): void {
+        if (!poll.running || !deviceState.isOpen) {
+            logMessage(qsTr("温控器未连接，命令未提交"))
+            return
+        }
+        // 手动命令排在剩余查询之前，连续点击仍按操作顺序发送。
+        const nextQuery = pending.findIndex(item => item.op === "?")
+        pending.splice(nextQuery < 0 ? pending.length : nextQuery, 0, { op, module, command, value })
+    }
+    function sendNext(): void {
+        if (!deviceState.isOpen) return
+        if (pending.length === 0) refill()
+        const item = pending.shift()
+        switch (item.op) {
+        case "?": deviceState.query(item.module, item.command); break
+        case "=": deviceState.setParameter(item.module, item.command, item.value); break
+        case "!": deviceState.saveParameter(item.module, item.command); break
+        }
     }
     function accept(at, packet: tcm232Packet): void {
         if (packet.module === Tcm232Protocol.CMD && packet.command === Tcm232Protocol.REPLY) {
@@ -60,17 +80,22 @@ ModulePage {
         const names = ["外部错误", "过压", "过流", "过温", "温度传感器开路", "负载短路", "负载开路"]
         return names.filter((name, bit) => !(bits & (1 << bit))).join("、") || "正常"
     }
-    Timer { id: poll; interval: 1000; repeat: true; triggeredOnStart: true; onTriggered: root.refresh() }
+    Timer { id: poll; interval: 100; repeat: true; onTriggered: root.sendNext() }
     Connections {
         target: root.deviceState as QtObject
         function onLogMessage(text: string): void { root.logMessage(text) }
         function onConnectionChanged(phase): void {
             if (phase === ResourcePhase.Acquired && root.deviceState.isOpen) {
+                root.pending = []
+                root.refill()
                 chart.clear()
                 poll.restart()
             }
-            if (phase === ResourcePhase.Released && !root.deviceState.isOpen) {
+            if (phase === ResourcePhase.AboutToRelease || phase === ResourcePhase.Released) {
                 poll.stop()
+                root.pending = []
+            }
+            if (phase === ResourcePhase.Released && !root.deviceState.isOpen) {
                 root.reports = ({})
             }
         }
@@ -112,13 +137,13 @@ ModulePage {
                 objectName: editor.key + "Set"
                 Layout.fillWidth: true; text: qsTr("设定")
                 enabled: draft.acceptableInput && draft.text.length > 0
-                onClicked: root.deviceState.setParameter(editor.module, editor.command, Number(draft.text))
+                onClicked: root.queueManual("=", editor.module, editor.command, Number(draft.text))
             }
             Button {
                 objectName: editor.key + "Save"
                 Layout.fillWidth: true; text: qsTr("保存")
                 ToolTip.text: qsTr("保存设备当前值"); ToolTip.visible: hovered
-                onClicked: root.deviceState.saveParameter(editor.module, editor.command)
+                onClicked: root.queueManual("!", editor.module, editor.command, undefined)
             }
         }
     }
@@ -152,8 +177,8 @@ ModulePage {
                 Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
                 Reading { caption: qsTr("输出开关"); reading: root.switchText(Tcm232Protocol.TCSW) }
                 RowLayout {
-                    Button { objectName: "outputOn"; text: qsTr("开启"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1) }
-                    Button { text: qsTr("关闭"); onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0) }
+                    Button { objectName: "outputOn"; text: qsTr("开启"); onClicked: root.queueManual("=", Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1) }
+                    Button { text: qsTr("关闭"); onClicked: root.queueManual("=", Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0) }
                 }
             }
         }

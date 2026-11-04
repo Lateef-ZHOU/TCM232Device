@@ -52,7 +52,7 @@ public:
     }
     Q_INVOKABLE bool setParameter(Tcm232::Module module, Tcm232::Command command, const QVariant &value)
     {
-        return Handle::send(Protocol::pack({{}, module, command, value})) && query(module, command);
+        return Handle::send(Protocol::pack({{}, module, command, value}));
     }
     Q_INVOKABLE bool saveParameter(Tcm232::Module module, Tcm232::Command command)
     {
