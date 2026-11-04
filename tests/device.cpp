@@ -30,6 +30,7 @@ void verifyDevice()
     using Tcm232::Protocol;
     using M = Protocol::Module;
     using Op = Protocol::Operation;
+    using C = Protocol::Command;
     auto packet = [](QByteArrayView line) {
         auto parsed = Protocol::parse(line);
         check(std::holds_alternative<Protocol::Packet>(parsed), "expected valid packet");
@@ -39,25 +40,23 @@ void verifyDevice()
         check(Protocol::moduleOf(entry.name) == entry.module && Protocol::nameOf(entry.module) == entry.name,
               "module table round trip");
     }
-    auto query = packet("TC1:TCACTTEMP?");
+    const auto query = packet("TC1:TCACTTEMP?");
     check(query.module == M::TC1 && query.operation == Op::Query && !query.address
-          && !Protocol::parseValue(query).isValid(), "unaddressed query");
+          && query.command == C::TCACTTEMP && !query.value.isValid(), "unaddressed query");
     auto save = packet("TC2:TCADJTEMP!@0");
-    check(save.module == M::TC2 && save.operation == Op::Save && save.address == 0, "addressed save");
+    check(save.module == M::TC2 && save.operation == Op::Save && save.address == 0
+          && save.command == C::TCADJTEMP && !save.value.isValid(), "addressed save");
     auto assignment = packet("TC2:TCADJTEMP=-25.125@255");
-    auto temperature = Protocol::parseValue(assignment);
-    check(assignment.operation == Op::Equals && assignment.address == 255 && assignment.parameter == "TCADJTEMP"
+    const auto &temperature = assignment.value;
+    check(assignment.operation == Op::Equals && assignment.address == 255 && assignment.command == C::TCADJTEMP
           && temperature.typeId() == QMetaType::Double && temperature.toDouble() == -25.125, "temperature");
-    check(Protocol::parseValue(packet("SYSTEM:SYSSN=00123")).toString() == "00123", "serial text");
-    check(Protocol::parseValue(packet("SYSTEM:SYSCOMPANY=A B=C?!")).toString() == "A B=C?!", "preserve string value");
-    check(Protocol::parseValue(packet("TC1:TCOE=1")).typeId() == QMetaType::LongLong, "option value");
+    check(packet("SYSTEM:SYSSN=00123").value.toString() == "00123", "serial text");
+    check(packet("SYSTEM:SYSCOMPANY=A B=C?!").value.toString() == "A B=C?!", "preserve string value");
+    check(packet("TC1:TCOE=1").value.typeId() == QMetaType::LongLong, "option value");
     // 人为交叉组合，只验证协议层的类型选择，不代表实物支持这些命令。
-    auto crossModule = Protocol::parseValue(packet("FAN1:TCACTTEMP=-2.5"));
+    auto crossModule = packet("FAN1:TCACTTEMP=-2.5").value;
     check(crossModule.typeId() == QMetaType::Double && crossModule.toDouble() == -2.5, "type follows parameter");
-    check(!Protocol::parseValue(packet("FAN1:TCACTTEMP=oops")).isValid(), "cross-module numeric validation");
-    check(!Protocol::parseValue(packet("TC2:TCACTTEMP=oops")).isValid(), "invalid numeric value");
-    check(!Protocol::parseValue(packet("CMD:REPLY=9")).isValid(), "undefined reply code");
-    check(Protocol::parseValue(packet("CMD:REPLY=8")).toInt() == 8, "save acknowledgement");
+    check(packet("CMD:REPLY=8").value.toInt() == 8, "save acknowledgement");
     const auto rejected = [](QByteArrayView line, Protocol::Error expected) {
         const auto parsed = Protocol::parse(line);
         const auto *error = std::get_if<Protocol::Error>(&parsed);
@@ -68,6 +67,15 @@ void verifyDevice()
     check(rejected("UNKNOWN:TCOE?", Protocol::Error::ModuleName), "unknown module");
     check(rejected("TC1::X=1", Protocol::Error::Syntax), "empty name segment");
     check(rejected("TC1:TCOE?=1", Protocol::Error::Syntax), "query with trailing data");
+    check(rejected("FAN1:TCACTTEMP=oops", Protocol::Error::Value), "cross-module numeric validation");
+    check(rejected("TC2:TCACTTEMP=oops", Protocol::Error::Value), "invalid numeric value");
+    check(rejected("CMD:REPLY=9", Protocol::Error::Value), "undefined reply code");
+    check(rejected("TC1:UNKNOWN?", Protocol::Error::CommandName)
+          && rejected("TC1:UNKNOWN!", Protocol::Error::CommandName)
+          && rejected("TC1:UNKNOWN=1", Protocol::Error::CommandName), "all operators require a known command");
+    const auto emptyText = packet("SYSTEM:SYSCOMPANY=");
+    check(emptyText.operation == Op::Equals && emptyText.value.typeId() == QMetaType::QString
+          && emptyText.value.toString().isEmpty(), "empty text is a valid assignment value");
     static_assert(std::derived_from<Tcm232::Tcm232Device, Device<Tcm232::Handle>>);
     FakeSerialPort::reset();
     const auto lock = std::make_shared<DeviceLock>(QStringLiteral("test"));
@@ -80,12 +88,12 @@ void verifyDevice()
                 ++replies;
             }, Qt::QueuedConnection);
         QObject::connect(&device, &Tcm232::Tcm232Device::parameterReported, &device,
-            [&](RxTime at, M module, QByteArray name, QVariant value, std::optional<quint8> address) {
+            [&](RxTime at, M module, C command, QVariant value, std::optional<quint8> address) {
                 if (module == M::CMD) {
-                    check(name == "TCOE" && value.typeId() == QMetaType::LongLong && value.toLongLong() == 0,
+                    check(command == C::TCOE && value.typeId() == QMetaType::LongLong && value.toLongLong() == 0,
                           "CMD with a different parameter is not an acknowledgement");
                 } else {
-                    check(at != RxTime{} && module == M::TC2 && name == "TCTSCOEFF:0" && value.typeId() == QMetaType::QString
+                    check(at != RxTime{} && module == M::TC2 && command == C::TCTSCOEFF_0 && value.typeId() == QMetaType::QString
                           && value.toString() == "25.07" && !address, "parameter");
                 }
                 ++values;

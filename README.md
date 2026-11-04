@@ -6,9 +6,9 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 设备后端目标 `Lidar::Tcm232Device` 提供 final 类 `Tcm232::Tcm232Device`，直接继承 `Device<Tcm232::Handle>`。连接和锁都属于这个对象；末端析构先关停收包。桥接器只需串口层，可配置 `-DTCM232_WITH_DEVICE=OFF`。
 
-串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；当前软件不限制发送间隔，仅在实机频繁漏响应时再评估。协议入口 `Protocol::parse` 接收已去掉回车和校验的主体，返回模块枚举、操作符枚举、可选地址，以及借用输入的参数名和值视图。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。模块名按 TCM232 命令表登记，另含应答模块 CMD；`moduleOf` / `nameOf` 共用同一张映射表。`=` 同时用于设置命令和带值回报，方向由调用端决定。`?` 与 `!` 分别为查询和保存。
+串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；当前软件不限制发送间隔，仅在实机频繁漏响应时再评估。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, operation, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
 
-`Protocol::parseValue` 仅对等号形式取值。数值参数用参数名视图查同一张哈希表，模块不参与类型选择。协议允许已识别的模块与参数自由组合，具体设备支持哪些组合由上层业务封装决定。REPLY 为 0～8 的整数；命令表中的 NUM 为有限 double，普通 OPT 和以十进制返回的 BINARYCODE 为整数，STR、HSTR、带 HSTR 的选项以及未知参数保留原文（QString）。非法数值返回无效 QVariant。设备收到参数时发 `parameterReported`（模块、参数名、QVariant 值），仅收到 `CMD:REPLY` 时发 `commandReplied`；二者均带 RxTime 和原报文的可选地址。具体温度显示、命令编排、轮询和 UI 待后续接入。
+`=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?`、`!` 都得到无效 QVariant；由操作符枚举区分查询与保存。官邸按结构化结果发出 parameterReported（模块枚举、命令枚举和值）或 commandReplied（仅 CMD:REPLY），并携带到达时刻和可选地址。具体温度显示、命令编排、轮询和 UI 待后续接入。
 
 ## 验证
 
