@@ -1,7 +1,9 @@
 #pragma once
 #include <cmath>
 #include <optional>
+#include <utility>
 #include <variant>
+#include <QMetaType>
 #include <QHash>
 #include <QVariant>
 #include <QByteArray>
@@ -12,7 +14,8 @@ namespace Tcm232
 struct Protocol
 {
     enum class Module { TC1, TC2, TA1, TA2, NTS1, NTS2, PWG1, PWG2, FAN1, FAN2, SYSTEM, SYS, RS485, UIRS232, MEMORY, PARAM, PCB, MUI, BOARDCONFIG, CMD };
-    enum class Operation : char { Equals = '=', Query = '?', Save = '!' };
+    struct Query {};
+    struct Save {};
     enum class Error { Address, ModuleName, Syntax, CommandName, Value };
 
     enum class Command {
@@ -81,12 +84,11 @@ struct Protocol
         return {};
     }
 
-    // 主体已去除回车与校验；结果自持，查询和保存的 value 均为无效 QVariant。
+    // 主体已去除回车与校验；结果自持，查询和保存的 value 是带各自元类型的空 QVariant。
     struct Packet {
         std::optional<quint8> address;
         Module module;
         Command command;
-        Operation operation;
         QVariant value;
     };
 
@@ -112,12 +114,13 @@ struct Protocol
                 const auto field = commands.constFind(line.sliced(colon + 1, i - colon - 1));
                 if (field == commands.cend()) return Error::CommandName;
 
-                Packet packet{address, *module, field->command, static_cast<Operation>(c), {}};
-                if (packet.operation == Operation::Equals) {
-                    packet.value = decode(field->type, line.sliced(i + 1));
-                    if (!packet.value.isValid()) return Error::Value;
-                }
-                return packet;
+                if (c == '?')
+                    return Packet{address, *module, field->command, QVariant(QMetaType::fromType<Query>())};
+                if (c == '!')
+                    return Packet{address, *module, field->command, QVariant(QMetaType::fromType<Save>())};
+                auto value = decode(field->type, line.sliced(i + 1));
+                if (!value.isValid()) return Error::Value;
+                return Packet{address, *module, field->command, std::move(value)};
             }
             if (c <= ' ' || c > '~' || c == '#' || (c == ':' && emptySegment)) return Error::Syntax;
             emptySegment = c == ':';

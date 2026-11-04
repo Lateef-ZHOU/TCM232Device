@@ -29,7 +29,6 @@ void verifyDevice()
 {
     using Tcm232::Protocol;
     using M = Protocol::Module;
-    using Op = Protocol::Operation;
     using C = Protocol::Command;
     auto packet = [](QByteArrayView line) {
         auto parsed = Protocol::parse(line);
@@ -41,14 +40,14 @@ void verifyDevice()
               "module table round trip");
     }
     const auto query = packet("TC1:TCACTTEMP?");
-    check(query.module == M::TC1 && query.operation == Op::Query && !query.address
-          && query.command == C::TCACTTEMP && !query.value.isValid(), "unaddressed query");
+    check(query.module == M::TC1 && query.value.metaType() == QMetaType::fromType<Protocol::Query>() && !query.address
+          && query.command == C::TCACTTEMP && query.value.isValid() && query.value.isNull(), "unaddressed query");
     auto save = packet("TC2:TCADJTEMP!@0");
-    check(save.module == M::TC2 && save.operation == Op::Save && save.address == 0
-          && save.command == C::TCADJTEMP && !save.value.isValid(), "addressed save");
+    check(save.module == M::TC2 && save.value.metaType() == QMetaType::fromType<Protocol::Save>() && save.address == 0
+          && save.command == C::TCADJTEMP && save.value.isValid() && save.value.isNull(), "addressed save");
     auto assignment = packet("TC2:TCADJTEMP=-25.125@255");
     const auto &temperature = assignment.value;
-    check(assignment.operation == Op::Equals && assignment.address == 255 && assignment.command == C::TCADJTEMP
+    check(assignment.address == 255 && assignment.command == C::TCADJTEMP
           && temperature.typeId() == QMetaType::Double && temperature.toDouble() == -25.125, "temperature");
     check(packet("SYSTEM:SYSSN=00123").value.toString() == "00123", "serial text");
     check(packet("SYSTEM:SYSCOMPANY=A B=C?!").value.toString() == "A B=C?!", "preserve string value");
@@ -74,7 +73,7 @@ void verifyDevice()
           && rejected("TC1:UNKNOWN!", Protocol::Error::CommandName)
           && rejected("TC1:UNKNOWN=1", Protocol::Error::CommandName), "all operators require a known command");
     const auto emptyText = packet("SYSTEM:SYSCOMPANY=");
-    check(emptyText.operation == Op::Equals && emptyText.value.typeId() == QMetaType::QString
+    check(emptyText.value.typeId() == QMetaType::QString
           && emptyText.value.toString().isEmpty(), "empty text is a valid assignment value");
     static_assert(std::derived_from<Tcm232::Tcm232Device, Device<Tcm232::Handle>>);
     FakeSerialPort::reset();
