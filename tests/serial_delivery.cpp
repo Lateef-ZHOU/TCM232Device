@@ -34,6 +34,9 @@ private:
 
 #ifdef TEST_TCM232_DEVICE
 void verifyDevice();
+#ifdef TEST_TCM232_QML
+void verifyQml();
+#endif
 #endif
 
 int main(int argc, char **argv)
@@ -119,5 +122,8 @@ int main(int argc, char **argv)
     require(FakeSerialPort::livePorts() == 0, "port not released");
 #ifdef TEST_TCM232_DEVICE
     verifyDevice();
+#ifdef TEST_TCM232_QML
+    verifyQml();
+#endif
 #endif
 }

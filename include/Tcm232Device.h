@@ -17,15 +17,15 @@ public:
     explicit Tcm232Device(QObject *parent = nullptr)
         : Device<Tcm232::Handle>(QStringLiteral("温控器"), QStringLiteral("串口 · TCM232"), parent)
     {
+        // QML 跨线程排队按信号签名查找这个标准时间类型的别名。
+        qRegisterMetaType<RxTime>("RxTime");
         static_assert(FinalDevice<Tcm232Device, decltype(&Tcm232Device::PreDestruction)>);
     }
     ~Tcm232Device() override { PreDestruction(); }
 
 Q_SIGNALS:
     void lockChanged(HandleCore::ResourcePhase phase) override;
-    void parameterReported(RxTime at, Tcm232::Protocol::Module module, Tcm232::Protocol::Command command,
-                           QVariant value, std::optional<quint8> address);
-    void commandReplied(RxTime at, int code, std::optional<quint8> address);
+    void packetReceived(RxTime at, const Tcm232::Packet &packet);
 
 private:
     using Handle::send;
@@ -49,10 +49,7 @@ private:
             Q_EMIT logMessage(QStringLiteral("温控收到查询或保存命令，预期为带值回报"));
             return;
         }
-        if (packet.module == Protocol::Module::CMD && packet.command == Protocol::Command::REPLY)
-            Q_EMIT commandReplied(at, packet.value.toInt(), packet.address);
-        else
-            Q_EMIT parameterReported(at, packet.module, packet.command, packet.value, packet.address);
+        Q_EMIT packetReceived(at, packet);
     }
 };
 }

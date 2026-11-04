@@ -81,21 +81,20 @@ void verifyDevice()
     int replies = 0, values = 0;
     {
         Tcm232::Tcm232Device device;
-        QObject::connect(&device, &Tcm232::Tcm232Device::commandReplied, &device,
-            [&](RxTime at, int code, std::optional<quint8> address) {
-                check(at != RxTime{} && code == 1 && address == 0, "ack");
-                ++replies;
-            }, Qt::QueuedConnection);
-        QObject::connect(&device, &Tcm232::Tcm232Device::parameterReported, &device,
-            [&](RxTime at, M module, C command, QVariant value, std::optional<quint8> address) {
-                if (module == M::CMD) {
-                    check(command == C::TCOE && value.typeId() == QMetaType::LongLong && value.toLongLong() == 0,
-                          "CMD with a different parameter is not an acknowledgement");
+        QObject::connect(&device, &Tcm232::Tcm232Device::packetReceived, &device,
+            [&](RxTime at, const Protocol::Packet &p) {
+                check(at != RxTime{}, "arrival time");
+                if (p.module == M::CMD && p.command == C::REPLY) {
+                    check(p.value.toInt() == 1 && p.address == 0, "ack");
+                    ++replies;
                 } else {
-                    check(at != RxTime{} && module == M::TC2 && command == C::TCTSCOEFF_0 && value.typeId() == QMetaType::QString
-                          && value.toString() == "25.07" && !address, "parameter");
+                    if (p.module == M::CMD)
+                        check(p.command == C::TCOE && p.value.toLongLong() == 0, "cross-module parameter");
+                    else
+                        check(p.module == M::TC2 && p.command == C::TCTSCOEFF_0
+                              && p.value.toString() == "25.07" && !p.address, "parameter");
+                    ++values;
                 }
-                ++values;
             }, Qt::QueuedConnection);
         check(device.open(device.parameters({QStringLiteral("controlled"), {}})), "open");
         check(waitFor([&]{ return device.isOpen(); }), "connection timeout");
