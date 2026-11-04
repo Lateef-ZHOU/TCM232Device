@@ -43,6 +43,14 @@ struct Protocol
         CONNOUTPOL, TCTSRELOAD, REPLY
     };
 
+    // 主体已去除回车与校验；结果自持，查询和保存的 value 是存放 ValueType 枚举的 QVariant。
+    struct Packet {
+        std::optional<quint8> address;
+        Module module;
+        Command command;
+        QVariant value;
+    };
+
     struct ModuleName { Module module; QByteArrayView name; };
     inline static constexpr ModuleName modules[] = {
         {Module::TC1, "TC1"},
@@ -66,122 +74,6 @@ struct Protocol
         {Module::BOARDCONFIG, "BOARDCONFIG"},
         {Module::CMD, "CMD"}
     };
-
-    [[nodiscard]] static std::optional<Module> moduleOf(QByteArrayView name)
-    {
-        static const auto byName = [] {
-            QHash<QByteArrayView, Module> index;
-            for (const auto &entry : modules) index.insert(entry.name, entry.module);
-            return index;
-        }();
-        const auto it = byName.constFind(name);
-        if (it == byName.cend()) return std::nullopt;
-        return it.value();
-    }
-
-    [[nodiscard]] static constexpr QByteArrayView nameOf(Module module) noexcept
-    {
-        for (const auto &entry : modules)
-            if (entry.module == module) return entry.name;
-        return {};
-    }
-
-    [[nodiscard]] static constexpr QByteArrayView nameOf(Command command) noexcept
-    {
-        const auto *spec = specOf(command);
-        return spec ? spec->name : QByteArrayView{};
-    }
-
-    // 主体已去除回车与校验；结果自持，查询和保存的 value 是存放 ValueType 枚举的 QVariant。
-    struct Packet {
-        std::optional<quint8> address;
-        Module module;
-        Command command;
-        QVariant value;
-    };
-
-    // 返回 Handle 接受的 ASCII 主体。空结果表示不能封装，回车由串口 Handle 添加。
-    [[nodiscard]] static QByteArray pack(const Packet &packet)
-    {
-        const auto moduleName = nameOf(packet.module);
-        const auto *spec = specOf(packet.command);
-        if (moduleName.isEmpty() || !spec) return {};
-
-        QByteArray body = moduleName.toByteArray();
-        body += ':';
-        body.append(spec->name);
-        if (packet.value.metaType() == QMetaType::fromType<ValueType>()) {
-            switch (packet.value.value<ValueType>()) {
-            case ValueType::Query: body += '?'; break;
-            case ValueType::Save: body += '!'; break;
-            default: return {};
-            }
-        } else {
-            body += '=';
-            if (!appendValue(body, spec->type, packet.value, packet.address.has_value())) return {};
-        }
-        if (packet.address) {
-            body += '@';
-            body += QByteArray::number(*packet.address);
-        }
-        return body;
-    }
-
-    [[nodiscard]] static std::variant<Packet, Error> parse(QByteArrayView line)
-    {
-        std::optional<quint8> address;
-        const auto at = line.lastIndexOf('@');
-        if (at >= 0) {
-            address = addressValue(line.sliced(at + 1));
-            if (!address) return Error::Address;
-            line = line.first(at);
-        }
-        const auto colon = line.indexOf(':');
-        if (colon <= 0) return Error::Syntax;
-        const auto module = moduleOf(line.first(colon));
-        if (!module) return Error::ModuleName;
-
-        bool emptySegment = true;
-        for (auto i = colon + 1; i < line.size(); ++i) {
-            const char c = line[i];
-            if (c == '=' || c == '?' || c == '!') {
-                if (emptySegment || (c != '=' && i + 1 != line.size())) return Error::Syntax;
-                const auto *field = specOf(line.sliced(colon + 1, i - colon - 1));
-                if (!field) return Error::CommandName;
-
-                auto type = field->type;
-                if (c == '?') type = ValueType::Query;
-                if (c == '!') type = ValueType::Save;
-                auto value = decode(type, line.sliced(i + 1));
-                if (!value.isValid()) return Error::Value;
-                return Packet{address, *module, field->command, std::move(value)};
-            }
-            if (c <= ' ' || c > '~' || c == '#' || (c == ':' && emptySegment)) return Error::Syntax;
-            emptySegment = c == ':';
-        }
-        return Error::Syntax;
-    }
-
-    // 带校验的行以 @地址#YY 结尾，异或包含 '#'。通过后只剥掉校验。
-    [[nodiscard]] static bool acceptChecksum(QByteArray &line)
-    {
-        const auto hash = line.indexOf('#');
-        if (hash < 0)
-            return true;
-        if (line.size() - hash != 3)
-            return false;
-        const auto at = line.lastIndexOf('@', hash);
-        if (at <= 0 || !addressValue(QByteArrayView(line).sliced(at + 1, hash - at - 1)))
-            return false;
-        unsigned char sum = 0;
-        for (qsizetype i = 0; i <= hash; ++i)
-            sum ^= static_cast<unsigned char>(line.at(i));
-        constexpr char hex[] = "0123456789ABCDEF";
-        if (line.at(hash + 1) != hex[sum >> 4] || line.at(hash + 2) != hex[sum & 15])
-            return false;
-        line.truncate(hash);
-        return true;
-    }
 
 private:
     struct CommandSpec { Command command; QByteArrayView name; ValueType type; };
@@ -450,6 +342,119 @@ private:
         }
         if (value > 255) return std::nullopt;
         return static_cast<quint8>(value);
+    }
+
+public:
+    // 名称查询与串口帧校验
+
+    [[nodiscard]] static std::optional<Module> moduleOf(QByteArrayView name)
+    {
+        static const auto byName = [] {
+            QHash<QByteArrayView, Module> index;
+            for (const auto &entry : modules) index.insert(entry.name, entry.module);
+            return index;
+        }();
+        const auto it = byName.constFind(name);
+        if (it == byName.cend()) return std::nullopt;
+        return it.value();
+    }
+
+    [[nodiscard]] static constexpr QByteArrayView nameOf(Module module) noexcept
+    {
+        for (const auto &entry : modules)
+            if (entry.module == module) return entry.name;
+        return {};
+    }
+
+    [[nodiscard]] static constexpr QByteArrayView nameOf(Command command) noexcept
+    {
+        const auto *spec = specOf(command);
+        return spec ? spec->name : QByteArrayView{};
+    }
+
+    // 带校验的行以 @地址#YY 结尾，异或包含 '#'。通过后只剥掉校验。
+    [[nodiscard]] static bool acceptChecksum(QByteArray &line)
+    {
+        const auto hash = line.indexOf('#');
+        if (hash < 0)
+            return true;
+        if (line.size() - hash != 3)
+            return false;
+        const auto at = line.lastIndexOf('@', hash);
+        if (at <= 0 || !addressValue(QByteArrayView(line).sliced(at + 1, hash - at - 1)))
+            return false;
+        unsigned char sum = 0;
+        for (qsizetype i = 0; i <= hash; ++i)
+            sum ^= static_cast<unsigned char>(line.at(i));
+        constexpr char hex[] = "0123456789ABCDEF";
+        if (line.at(hash + 1) != hex[sum >> 4] || line.at(hash + 2) != hex[sum & 15])
+            return false;
+        line.truncate(hash);
+        return true;
+    }
+
+    // 整包收发
+
+    // 返回 Handle 接受的 ASCII 主体。空结果表示不能封装，回车由串口 Handle 添加。
+    [[nodiscard]] static QByteArray pack(const Packet &packet)
+    {
+        const auto moduleName = nameOf(packet.module);
+        const auto *spec = specOf(packet.command);
+        if (moduleName.isEmpty() || !spec) return {};
+
+        QByteArray body = moduleName.toByteArray();
+        body += ':';
+        body.append(spec->name);
+        if (packet.value.metaType() == QMetaType::fromType<ValueType>()) {
+            switch (packet.value.value<ValueType>()) {
+            case ValueType::Query: body += '?'; break;
+            case ValueType::Save: body += '!'; break;
+            default: return {};
+            }
+        } else {
+            body += '=';
+            if (!appendValue(body, spec->type, packet.value, packet.address.has_value())) return {};
+        }
+        if (packet.address) {
+            body += '@';
+            body += QByteArray::number(*packet.address);
+        }
+        return body;
+    }
+
+    [[nodiscard]] static std::variant<Packet, Error> parse(QByteArrayView line)
+    {
+        std::optional<quint8> address;
+        const auto at = line.lastIndexOf('@');
+        if (at >= 0) {
+            address = addressValue(line.sliced(at + 1));
+            if (!address) return Error::Address;
+            line = line.first(at);
+        }
+        const auto colon = line.indexOf(':');
+        if (colon <= 0) return Error::Syntax;
+        const auto module = moduleOf(line.first(colon));
+        if (!module) return Error::ModuleName;
+
+        bool emptySegment = true;
+        for (auto i = colon + 1; i < line.size(); ++i) {
+            const char c = line[i];
+            if (c == '=' || c == '?' || c == '!') {
+                if (emptySegment || (c != '=' && i + 1 != line.size())) return Error::Syntax;
+                const auto *field = specOf(line.sliced(colon + 1, i - colon - 1));
+                if (!field) return Error::CommandName;
+
+                auto type = field->type;
+                if (c == '?') type = ValueType::Query;
+                if (c == '!') type = ValueType::Save;
+                auto value = decode(type, line.sliced(i + 1));
+                if (!value.isValid()) return Error::Value;
+                return Packet{address, *module, field->command, std::move(value)};
+            }
+            if (c <= ' ' || c > '~' || c == '#' || (c == ':' && emptySegment)) return Error::Syntax;
+            emptySegment = c == ':';
+        }
+        return Error::Syntax;
     }
 };
 }
