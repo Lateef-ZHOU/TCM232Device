@@ -1,6 +1,9 @@
 #pragma once
 #include <cmath>
 #include <optional>
+#include <iterator>
+#include <limits>
+#include <QLocale>
 #include <utility>
 #include <variant>
 #include <QMetaType>
@@ -84,6 +87,38 @@ struct Protocol
         return {};
     }
 
+    [[nodiscard]] static constexpr QByteArrayView nameOf(Command command) noexcept
+    {
+        const auto *spec = specOf(command);
+        return spec ? spec->name : QByteArrayView{};
+    }
+
+    // 返回 Handle 接受的 ASCII 主体。空结果表示不能封装，回车由串口 Handle 添加。
+    [[nodiscard]] static QByteArray pack(std::optional<quint8> address, Module module, Command command,
+                                         const QVariant &value)
+    {
+        const auto moduleName = nameOf(module);
+        const auto *spec = specOf(command);
+        if (moduleName.isEmpty() || !spec) return {};
+
+        QByteArray body = moduleName.toByteArray();
+        body += ':';
+        body.append(spec->name);
+        if (value.metaType() == QMetaType::fromType<Query>()) {
+            body += '?';
+        } else if (value.metaType() == QMetaType::fromType<Save>()) {
+            body += '!';
+        } else {
+            body += '=';
+            if (!appendValue(body, spec->type, value, address.has_value())) return {};
+        }
+        if (address) {
+            body += '@';
+            body += QByteArray::number(*address);
+        }
+        return body;
+    }
+
     // 主体已去除回车与校验；结果自持，查询和保存的 value 是带各自元类型的空 QVariant。
     struct Packet {
         std::optional<quint8> address;
@@ -111,8 +146,8 @@ struct Protocol
             const char c = line[i];
             if (c == '=' || c == '?' || c == '!') {
                 if (emptySegment || (c != '=' && i + 1 != line.size())) return Error::Syntax;
-                const auto field = commands.constFind(line.sliced(colon + 1, i - colon - 1));
-                if (field == commands.cend()) return Error::CommandName;
+                const auto *field = specOf(line.sliced(colon + 1, i - colon - 1));
+                if (!field) return Error::CommandName;
 
                 if (c == '?')
                     return Packet{address, *module, field->command, QVariant(QMetaType::fromType<Query>())};
@@ -151,173 +186,236 @@ struct Protocol
 
 private:
     enum class ValueType { Real, Integer, Text, ReplyCode };
-    struct CommandSpec { Command command; ValueType type; };
-    // 型号表中的命令按参数名登记，不限制模块组合；哈希只负责从文本定位这条描述。
-    inline static const QHash<QByteArrayView, CommandSpec> commands = {
-        {"TCADJTEMP", {Command::TCADJTEMP, ValueType::Real}},
-        {"TCACTTEMP", {Command::TCACTTEMP, ValueType::Real}},
-        {"TCSETTEMP", {Command::TCSETTEMP, ValueType::Real}},
-        {"TCRAMPSPEED", {Command::TCRAMPSPEED, ValueType::Real}},
-        {"TCMAXTEMP", {Command::TCMAXTEMP, ValueType::Real}},
-        {"TCMINTEMP", {Command::TCMINTEMP, ValueType::Real}},
-        {"TCSTEPTEMP", {Command::TCSTEPTEMP, ValueType::Real}},
-        {"TCDECIMALDIGITS", {Command::TCDECIMALDIGITS, ValueType::Real}},
-        {"TCMAXV", {Command::TCMAXV, ValueType::Real}},
-        {"TCCOOLVRATIO", {Command::TCCOOLVRATIO, ValueType::Real}},
-        {"TCMODE", {Command::TCMODE, ValueType::Integer}},
-        {"TCSW", {Command::TCSW, ValueType::Integer}},
-        {"TCOE", {Command::TCOE, ValueType::Integer}},
-        {"TCSETVOL", {Command::TCSETVOL, ValueType::Real}},
-        {"TCACTVOL", {Command::TCACTVOL, ValueType::Real}},
-        {"TCACTCUR", {Command::TCACTCUR, ValueType::Real}},
-        {"TCLOADRES", {Command::TCLOADRES, ValueType::Real}},
-        {"TCLOADDETECT", {Command::TCLOADDETECT, ValueType::Integer}},
-        {"TCLOADRESLT", {Command::TCLOADRESLT, ValueType::Real}},
-        {"TCLOADRESHT", {Command::TCLOADRESHT, ValueType::Real}},
-        {"TCTSTEMP", {Command::TCTSTEMP, ValueType::Real}},
-        {"TCTSOFFSET", {Command::TCTSOFFSET, ValueType::Real}},
-        {"TCTSOUTPUT", {Command::TCTSOUTPUT, ValueType::Text}},
-        {"TCTSTYPE", {Command::TCTSTYPE, ValueType::Text}},
-        {"TCTSCOEFF:0", {Command::TCTSCOEFF_0, ValueType::Text}},
-        {"TCTSCOEFF:1", {Command::TCTSCOEFF_1, ValueType::Text}},
-        {"TCTSCOEFF:2", {Command::TCTSCOEFF_2, ValueType::Text}},
-        {"TCTSCOEFF:3", {Command::TCTSCOEFF_3, ValueType::Text}},
-        {"TCTSCOEFF:4", {Command::TCTSCOEFF_4, ValueType::Text}},
-        {"TCTSSTEP", {Command::TCTSSTEP, ValueType::Real}},
-        {"TCAUXTSFUNC", {Command::TCAUXTSFUNC, ValueType::Integer}},
-        {"TCAUXTSINDEX", {Command::TCAUXTSINDEX, ValueType::Integer}},
-        {"TCAUXTSACTTEMP", {Command::TCAUXTSACTTEMP, ValueType::Real}},
-        {"TCAUXTSSAFETY", {Command::TCAUXTSSAFETY, ValueType::Integer}},
-        {"TCAUXTSOTPLT", {Command::TCAUXTSOTPLT, ValueType::Real}},
-        {"TCAUXTSOTPHT", {Command::TCAUXTSOTPHT, ValueType::Real}},
-        {"TCRTOCPSTATUS", {Command::TCRTOCPSTATUS, ValueType::Integer}},
-        {"TCRTOCPLT", {Command::TCRTOCPLT, ValueType::Real}},
-        {"TCRTOCPHT", {Command::TCRTOCPHT, ValueType::Real}},
-        {"TCPIDTYPE", {Command::TCPIDTYPE, ValueType::Integer}},
-        {"TCPIDP", {Command::TCPIDP, ValueType::Real}},
-        {"TCPIDTI", {Command::TCPIDTI, ValueType::Real}},
-        {"TCPIDTD", {Command::TCPIDTD, ValueType::Real}},
-        {"TCCTRLINTERVAL", {Command::TCCTRLINTERVAL, ValueType::Real}},
-        {"TCPIDALGO", {Command::TCPIDALGO, ValueType::Integer}},
-        {"TCTUNESTATUS", {Command::TCTUNESTATUS, ValueType::Real}},
-        {"TCPIDWINDOW", {Command::TCPIDWINDOW, ValueType::Real}},
-        {"TCPIDACCWINDOW", {Command::TCPIDACCWINDOW, ValueType::Real}},
-        {"TCOVPADJTHR", {Command::TCOVPADJTHR, ValueType::Real}},
-        {"TCOVPACTTHR", {Command::TCOVPACTTHR, ValueType::Real}},
-        {"TCOVPSTATUS", {Command::TCOVPSTATUS, ValueType::Integer}},
-        {"TCOCPADJTHR", {Command::TCOCPADJTHR, ValueType::Real}},
-        {"TCOCPACTTHR", {Command::TCOCPACTTHR, ValueType::Real}},
-        {"TCOCPSTATUS", {Command::TCOCPSTATUS, ValueType::Integer}},
-        {"TCCURLIMIT", {Command::TCCURLIMIT, ValueType::Real}},
-        {"TCOTPMODE", {Command::TCOTPMODE, ValueType::Integer}},
-        {"TCOTPLT", {Command::TCOTPLT, ValueType::Real}},
-        {"TCOTPHT", {Command::TCOTPHT, ValueType::Real}},
-        {"TCOTPSTATUS", {Command::TCOTPSTATUS, ValueType::Integer}},
-        {"TCOTPLHYS", {Command::TCOTPLHYS, ValueType::Real}},
-        {"TCOTPHHYS", {Command::TCOTPHHYS, ValueType::Real}},
-        {"TCEXTSTATUS", {Command::TCEXTSTATUS, ValueType::Integer}},
-        {"TCEXTLOCK", {Command::TCEXTLOCK, ValueType::Integer}},
-        {"TCEXTLOCKPOL", {Command::TCEXTLOCKPOL, ValueType::Integer}},
-        {"TCEXTCTRL", {Command::TCEXTCTRL, ValueType::Real}},
-        {"TCAR", {Command::TCAR, ValueType::Real}},
-        {"TCARCNT", {Command::TCARCNT, ValueType::Real}},
-        {"TCARDELAY", {Command::TCARDELAY, ValueType::Real}},
-        {"TCERRORLOG", {Command::TCERRORLOG, ValueType::Integer}},
-        {"TCERRORSTATUS", {Command::TCERRORSTATUS, ValueType::Integer}},
-        {"TCERRORMASK", {Command::TCERRORMASK, ValueType::Integer}},
-        {"TAACTTEMP", {Command::TAACTTEMP, ValueType::Real}},
-        {"TATSOFFSET", {Command::TATSOFFSET, ValueType::Real}},
-        {"TATSOUTPUT", {Command::TATSOUTPUT, ValueType::Text}},
-        {"TATSTYPE", {Command::TATSTYPE, ValueType::Text}},
-        {"TATSCOEFF:0", {Command::TATSCOEFF_0, ValueType::Text}},
-        {"TATSCOEFF:1", {Command::TATSCOEFF_1, ValueType::Text}},
-        {"TATSCOEFF:2", {Command::TATSCOEFF_2, ValueType::Text}},
-        {"TATSCOEFF:3", {Command::TATSCOEFF_3, ValueType::Text}},
-        {"TATSCOEFF:4", {Command::TATSCOEFF_4, ValueType::Text}},
-        {"TAOTPSTATUS", {Command::TAOTPSTATUS, ValueType::Integer}},
-        {"TAOTPLT", {Command::TAOTPLT, ValueType::Real}},
-        {"TAOTPHT", {Command::TAOTPHT, ValueType::Real}},
-        {"NTSACTTEMP", {Command::NTSACTTEMP, ValueType::Real}},
-        {"NTSSAFETY", {Command::NTSSAFETY, ValueType::Integer}},
-        {"NTSSTATUS", {Command::NTSSTATUS, ValueType::Integer}},
-        {"NTSTIMEOUT", {Command::NTSTIMEOUT, ValueType::Real}},
-        {"NTSDEFTEMP", {Command::NTSDEFTEMP, ValueType::Real}},
-        {"PWGADJFREQ", {Command::PWGADJFREQ, ValueType::Real}},
-        {"PWGSETFREQ", {Command::PWGSETFREQ, ValueType::Real}},
-        {"PWGADJPW", {Command::PWGADJPW, ValueType::Real}},
-        {"PWGSETPW", {Command::PWGSETPW, ValueType::Real}},
-        {"PWGPOL", {Command::PWGPOL, ValueType::Integer}},
-        {"FANACTTEMP", {Command::FANACTTEMP, ValueType::Real}},
-        {"FANSTARTTEMP", {Command::FANSTARTTEMP, ValueType::Real}},
-        {"FANMAXTEMP", {Command::FANMAXTEMP, ValueType::Real}},
-        {"FANHYSTEMP", {Command::FANHYSTEMP, ValueType::Real}},
-        {"FANAUXTSFUNC", {Command::FANAUXTSFUNC, ValueType::Integer}},
-        {"FANAUXTSINDEX", {Command::FANAUXTSINDEX, ValueType::Integer}},
-        {"FANAUXTSACTTEMP", {Command::FANAUXTSACTTEMP, ValueType::Real}},
-        {"FANAUXTSSAFETY", {Command::FANAUXTSSAFETY, ValueType::Integer}},
-        {"FANAUXTSOTPLT", {Command::FANAUXTSOTPLT, ValueType::Real}},
-        {"FANAUXTSOTPHT", {Command::FANAUXTSOTPHT, ValueType::Real}},
-        {"FANACTDUTY", {Command::FANACTDUTY, ValueType::Real}},
-        {"FANSTARTDUTY", {Command::FANSTARTDUTY, ValueType::Real}},
-        {"FANMAXDUTY", {Command::FANMAXDUTY, ValueType::Real}},
-        {"FANIDLEDUTY", {Command::FANIDLEDUTY, ValueType::Real}},
-        {"FANSAFEDUTY", {Command::FANSAFEDUTY, ValueType::Real}},
-        {"FANSW", {Command::FANSW, ValueType::Integer}},
-        {"FANOUTPOL", {Command::FANOUTPOL, ValueType::Integer}},
-        {"FANPWMFREQ", {Command::FANPWMFREQ, ValueType::Real}},
-        {"FANSELFTEST", {Command::FANSELFTEST, ValueType::Real}},
-        {"FANPPR", {Command::FANPPR, ValueType::Real}},
-        {"FANSPEED", {Command::FANSPEED, ValueType::Real}},
-        {"FANRTOCPSTATUS", {Command::FANRTOCPSTATUS, ValueType::Integer}},
-        {"FANRTOCPLT", {Command::FANRTOCPLT, ValueType::Real}},
-        {"FANRTOCPHT", {Command::FANRTOCPHT, ValueType::Real}},
-        {"SYSSN", {Command::SYSSN, ValueType::Text}},
-        {"SYSPVIN", {Command::SYSPVIN, ValueType::Real}},
-        {"SYSTIME", {Command::SYSTIME, ValueType::Real}},
-        {"SYSMODEL", {Command::SYSMODEL, ValueType::Text}},
-        {"SYSVERSION", {Command::SYSVERSION, ValueType::Text}},
-        {"SYSCOMPANY", {Command::SYSCOMPANY, ValueType::Text}},
-        {"SYSWEBSITE", {Command::SYSWEBSITE, ValueType::Text}},
-        {"RESET", {Command::RESET, ValueType::Text}},
-        {"COMADDR", {Command::COMADDR, ValueType::Real}},
-        {"COMBAUDRATE", {Command::COMBAUDRATE, ValueType::Real}},
-        {"COMMODBUS", {Command::COMMODBUS, ValueType::Real}},
-        {"MEMWP", {Command::MEMWP, ValueType::Integer}},
-        {"BATCH", {Command::BATCH, ValueType::Integer}},
-        {"BATCHDEFAULT", {Command::BATCHDEFAULT, ValueType::Text}},
-        {"BATCHSAVE", {Command::BATCHSAVE, ValueType::Text}},
-        {"TMACTTEMP", {Command::TMACTTEMP, ValueType::Real}},
-        {"TMOTPSTATUS", {Command::TMOTPSTATUS, ValueType::Integer}},
-        {"TMOTPLT", {Command::TMOTPLT, ValueType::Real}},
-        {"TMOTPHT", {Command::TMOTPHT, ValueType::Real}},
-        {"TMOTPHHYS", {Command::TMOTPHHYS, ValueType::Real}},
-        {"TMDTPSTATUS", {Command::TMDTPSTATUS, ValueType::Integer}},
-        {"TMDTPLT", {Command::TMDTPLT, ValueType::Real}},
-        {"TMDTPHT", {Command::TMDTPHT, ValueType::Real}},
-        {"TMDTPHHYS", {Command::TMDTPHHYS, ValueType::Real}},
-        {"LEDERRMODE", {Command::LEDERRMODE, ValueType::Integer}},
-        {"LEDSWMODE", {Command::LEDSWMODE, ValueType::Integer}},
-        {"ASEN", {Command::ASEN, ValueType::Integer}},
-        {"TCINPARALLEL", {Command::TCINPARALLEL, ValueType::Integer}},
-        {"TC1KEYPOL", {Command::TC1KEYPOL, ValueType::Integer}},
-        {"TC2KEYPOL", {Command::TC2KEYPOL, ValueType::Integer}},
-        {"CONNIN1DEFVOL", {Command::CONNIN1DEFVOL, ValueType::Integer}},
-        {"CONNIN2DEFVOL", {Command::CONNIN2DEFVOL, ValueType::Integer}},
-        {"CONNIN1", {Command::CONNIN1, ValueType::Integer}},
-        {"CONNIN2", {Command::CONNIN2, ValueType::Integer}},
-        {"CONNOUT1POL", {Command::CONNOUT1POL, ValueType::Integer}},
-        {"CONNOUT2POL", {Command::CONNOUT2POL, ValueType::Integer}},
-        {"CONNOUT1", {Command::CONNOUT1, ValueType::Integer}},
-        {"CONNOUT2", {Command::CONNOUT2, ValueType::Integer}},
-        {"FAN1MAINTEMP", {Command::FAN1MAINTEMP, ValueType::Integer}},
-        {"FAN2MAINTEMP", {Command::FAN2MAINTEMP, ValueType::Integer}},
-        {"CONNIN", {Command::CONNIN, ValueType::Integer}},
-        {"CONNINDEFVOL", {Command::CONNINDEFVOL, ValueType::Integer}},
-        {"CONNOUT", {Command::CONNOUT, ValueType::Integer}},
-        {"CONNOUTPOL", {Command::CONNOUTPOL, ValueType::Integer}},
-        {"TCTSRELOAD", {Command::TCTSRELOAD, ValueType::Text}},
-        {"REPLY", {Command::REPLY, ValueType::ReplyCode}},
+    struct CommandSpec { Command command; QByteArrayView name; ValueType type; };
+    // 按枚举顺序登记一次。下行按下标读取，上行哈希只索引同一条记录。
+    inline static constexpr CommandSpec commands[] = {
+        {Command::TCADJTEMP, "TCADJTEMP", ValueType::Real},
+        {Command::TCACTTEMP, "TCACTTEMP", ValueType::Real},
+        {Command::TCSETTEMP, "TCSETTEMP", ValueType::Real},
+        {Command::TCRAMPSPEED, "TCRAMPSPEED", ValueType::Real},
+        {Command::TCMAXTEMP, "TCMAXTEMP", ValueType::Real},
+        {Command::TCMINTEMP, "TCMINTEMP", ValueType::Real},
+        {Command::TCSTEPTEMP, "TCSTEPTEMP", ValueType::Real},
+        {Command::TCDECIMALDIGITS, "TCDECIMALDIGITS", ValueType::Real},
+        {Command::TCMAXV, "TCMAXV", ValueType::Real},
+        {Command::TCCOOLVRATIO, "TCCOOLVRATIO", ValueType::Real},
+        {Command::TCMODE, "TCMODE", ValueType::Integer},
+        {Command::TCSW, "TCSW", ValueType::Integer},
+        {Command::TCOE, "TCOE", ValueType::Integer},
+        {Command::TCSETVOL, "TCSETVOL", ValueType::Real},
+        {Command::TCACTVOL, "TCACTVOL", ValueType::Real},
+        {Command::TCACTCUR, "TCACTCUR", ValueType::Real},
+        {Command::TCLOADRES, "TCLOADRES", ValueType::Real},
+        {Command::TCLOADDETECT, "TCLOADDETECT", ValueType::Integer},
+        {Command::TCLOADRESLT, "TCLOADRESLT", ValueType::Real},
+        {Command::TCLOADRESHT, "TCLOADRESHT", ValueType::Real},
+        {Command::TCTSTEMP, "TCTSTEMP", ValueType::Real},
+        {Command::TCTSOFFSET, "TCTSOFFSET", ValueType::Real},
+        {Command::TCTSOUTPUT, "TCTSOUTPUT", ValueType::Text},
+        {Command::TCTSTYPE, "TCTSTYPE", ValueType::Text},
+        {Command::TCTSCOEFF_0, "TCTSCOEFF:0", ValueType::Text},
+        {Command::TCTSCOEFF_1, "TCTSCOEFF:1", ValueType::Text},
+        {Command::TCTSCOEFF_2, "TCTSCOEFF:2", ValueType::Text},
+        {Command::TCTSCOEFF_3, "TCTSCOEFF:3", ValueType::Text},
+        {Command::TCTSCOEFF_4, "TCTSCOEFF:4", ValueType::Text},
+        {Command::TCTSSTEP, "TCTSSTEP", ValueType::Real},
+        {Command::TCAUXTSFUNC, "TCAUXTSFUNC", ValueType::Integer},
+        {Command::TCAUXTSINDEX, "TCAUXTSINDEX", ValueType::Integer},
+        {Command::TCAUXTSACTTEMP, "TCAUXTSACTTEMP", ValueType::Real},
+        {Command::TCAUXTSSAFETY, "TCAUXTSSAFETY", ValueType::Integer},
+        {Command::TCAUXTSOTPLT, "TCAUXTSOTPLT", ValueType::Real},
+        {Command::TCAUXTSOTPHT, "TCAUXTSOTPHT", ValueType::Real},
+        {Command::TCRTOCPSTATUS, "TCRTOCPSTATUS", ValueType::Integer},
+        {Command::TCRTOCPLT, "TCRTOCPLT", ValueType::Real},
+        {Command::TCRTOCPHT, "TCRTOCPHT", ValueType::Real},
+        {Command::TCPIDTYPE, "TCPIDTYPE", ValueType::Integer},
+        {Command::TCPIDP, "TCPIDP", ValueType::Real},
+        {Command::TCPIDTI, "TCPIDTI", ValueType::Real},
+        {Command::TCPIDTD, "TCPIDTD", ValueType::Real},
+        {Command::TCCTRLINTERVAL, "TCCTRLINTERVAL", ValueType::Real},
+        {Command::TCPIDALGO, "TCPIDALGO", ValueType::Integer},
+        {Command::TCTUNESTATUS, "TCTUNESTATUS", ValueType::Real},
+        {Command::TCPIDWINDOW, "TCPIDWINDOW", ValueType::Real},
+        {Command::TCPIDACCWINDOW, "TCPIDACCWINDOW", ValueType::Real},
+        {Command::TCOVPADJTHR, "TCOVPADJTHR", ValueType::Real},
+        {Command::TCOVPACTTHR, "TCOVPACTTHR", ValueType::Real},
+        {Command::TCOVPSTATUS, "TCOVPSTATUS", ValueType::Integer},
+        {Command::TCOCPADJTHR, "TCOCPADJTHR", ValueType::Real},
+        {Command::TCOCPACTTHR, "TCOCPACTTHR", ValueType::Real},
+        {Command::TCOCPSTATUS, "TCOCPSTATUS", ValueType::Integer},
+        {Command::TCCURLIMIT, "TCCURLIMIT", ValueType::Real},
+        {Command::TCOTPMODE, "TCOTPMODE", ValueType::Integer},
+        {Command::TCOTPLT, "TCOTPLT", ValueType::Real},
+        {Command::TCOTPHT, "TCOTPHT", ValueType::Real},
+        {Command::TCOTPSTATUS, "TCOTPSTATUS", ValueType::Integer},
+        {Command::TCOTPLHYS, "TCOTPLHYS", ValueType::Real},
+        {Command::TCOTPHHYS, "TCOTPHHYS", ValueType::Real},
+        {Command::TCEXTSTATUS, "TCEXTSTATUS", ValueType::Integer},
+        {Command::TCEXTLOCK, "TCEXTLOCK", ValueType::Integer},
+        {Command::TCEXTLOCKPOL, "TCEXTLOCKPOL", ValueType::Integer},
+        {Command::TCEXTCTRL, "TCEXTCTRL", ValueType::Real},
+        {Command::TCAR, "TCAR", ValueType::Real},
+        {Command::TCARCNT, "TCARCNT", ValueType::Real},
+        {Command::TCARDELAY, "TCARDELAY", ValueType::Real},
+        {Command::TCERRORLOG, "TCERRORLOG", ValueType::Integer},
+        {Command::TCERRORSTATUS, "TCERRORSTATUS", ValueType::Integer},
+        {Command::TCERRORMASK, "TCERRORMASK", ValueType::Integer},
+        {Command::TAACTTEMP, "TAACTTEMP", ValueType::Real},
+        {Command::TATSOFFSET, "TATSOFFSET", ValueType::Real},
+        {Command::TATSOUTPUT, "TATSOUTPUT", ValueType::Text},
+        {Command::TATSTYPE, "TATSTYPE", ValueType::Text},
+        {Command::TATSCOEFF_0, "TATSCOEFF:0", ValueType::Text},
+        {Command::TATSCOEFF_1, "TATSCOEFF:1", ValueType::Text},
+        {Command::TATSCOEFF_2, "TATSCOEFF:2", ValueType::Text},
+        {Command::TATSCOEFF_3, "TATSCOEFF:3", ValueType::Text},
+        {Command::TATSCOEFF_4, "TATSCOEFF:4", ValueType::Text},
+        {Command::TAOTPSTATUS, "TAOTPSTATUS", ValueType::Integer},
+        {Command::TAOTPLT, "TAOTPLT", ValueType::Real},
+        {Command::TAOTPHT, "TAOTPHT", ValueType::Real},
+        {Command::NTSACTTEMP, "NTSACTTEMP", ValueType::Real},
+        {Command::NTSSAFETY, "NTSSAFETY", ValueType::Integer},
+        {Command::NTSSTATUS, "NTSSTATUS", ValueType::Integer},
+        {Command::NTSTIMEOUT, "NTSTIMEOUT", ValueType::Real},
+        {Command::NTSDEFTEMP, "NTSDEFTEMP", ValueType::Real},
+        {Command::PWGADJFREQ, "PWGADJFREQ", ValueType::Real},
+        {Command::PWGSETFREQ, "PWGSETFREQ", ValueType::Real},
+        {Command::PWGADJPW, "PWGADJPW", ValueType::Real},
+        {Command::PWGSETPW, "PWGSETPW", ValueType::Real},
+        {Command::PWGPOL, "PWGPOL", ValueType::Integer},
+        {Command::FANACTTEMP, "FANACTTEMP", ValueType::Real},
+        {Command::FANSTARTTEMP, "FANSTARTTEMP", ValueType::Real},
+        {Command::FANMAXTEMP, "FANMAXTEMP", ValueType::Real},
+        {Command::FANHYSTEMP, "FANHYSTEMP", ValueType::Real},
+        {Command::FANAUXTSFUNC, "FANAUXTSFUNC", ValueType::Integer},
+        {Command::FANAUXTSINDEX, "FANAUXTSINDEX", ValueType::Integer},
+        {Command::FANAUXTSACTTEMP, "FANAUXTSACTTEMP", ValueType::Real},
+        {Command::FANAUXTSSAFETY, "FANAUXTSSAFETY", ValueType::Integer},
+        {Command::FANAUXTSOTPLT, "FANAUXTSOTPLT", ValueType::Real},
+        {Command::FANAUXTSOTPHT, "FANAUXTSOTPHT", ValueType::Real},
+        {Command::FANACTDUTY, "FANACTDUTY", ValueType::Real},
+        {Command::FANSTARTDUTY, "FANSTARTDUTY", ValueType::Real},
+        {Command::FANMAXDUTY, "FANMAXDUTY", ValueType::Real},
+        {Command::FANIDLEDUTY, "FANIDLEDUTY", ValueType::Real},
+        {Command::FANSAFEDUTY, "FANSAFEDUTY", ValueType::Real},
+        {Command::FANSW, "FANSW", ValueType::Integer},
+        {Command::FANOUTPOL, "FANOUTPOL", ValueType::Integer},
+        {Command::FANPWMFREQ, "FANPWMFREQ", ValueType::Real},
+        {Command::FANSELFTEST, "FANSELFTEST", ValueType::Real},
+        {Command::FANPPR, "FANPPR", ValueType::Real},
+        {Command::FANSPEED, "FANSPEED", ValueType::Real},
+        {Command::FANRTOCPSTATUS, "FANRTOCPSTATUS", ValueType::Integer},
+        {Command::FANRTOCPLT, "FANRTOCPLT", ValueType::Real},
+        {Command::FANRTOCPHT, "FANRTOCPHT", ValueType::Real},
+        {Command::SYSSN, "SYSSN", ValueType::Text},
+        {Command::SYSPVIN, "SYSPVIN", ValueType::Real},
+        {Command::SYSTIME, "SYSTIME", ValueType::Real},
+        {Command::SYSMODEL, "SYSMODEL", ValueType::Text},
+        {Command::SYSVERSION, "SYSVERSION", ValueType::Text},
+        {Command::SYSCOMPANY, "SYSCOMPANY", ValueType::Text},
+        {Command::SYSWEBSITE, "SYSWEBSITE", ValueType::Text},
+        {Command::RESET, "RESET", ValueType::Text},
+        {Command::COMADDR, "COMADDR", ValueType::Real},
+        {Command::COMBAUDRATE, "COMBAUDRATE", ValueType::Real},
+        {Command::COMMODBUS, "COMMODBUS", ValueType::Real},
+        {Command::MEMWP, "MEMWP", ValueType::Integer},
+        {Command::BATCH, "BATCH", ValueType::Integer},
+        {Command::BATCHDEFAULT, "BATCHDEFAULT", ValueType::Text},
+        {Command::BATCHSAVE, "BATCHSAVE", ValueType::Text},
+        {Command::TMACTTEMP, "TMACTTEMP", ValueType::Real},
+        {Command::TMOTPSTATUS, "TMOTPSTATUS", ValueType::Integer},
+        {Command::TMOTPLT, "TMOTPLT", ValueType::Real},
+        {Command::TMOTPHT, "TMOTPHT", ValueType::Real},
+        {Command::TMOTPHHYS, "TMOTPHHYS", ValueType::Real},
+        {Command::TMDTPSTATUS, "TMDTPSTATUS", ValueType::Integer},
+        {Command::TMDTPLT, "TMDTPLT", ValueType::Real},
+        {Command::TMDTPHT, "TMDTPHT", ValueType::Real},
+        {Command::TMDTPHHYS, "TMDTPHHYS", ValueType::Real},
+        {Command::LEDERRMODE, "LEDERRMODE", ValueType::Integer},
+        {Command::LEDSWMODE, "LEDSWMODE", ValueType::Integer},
+        {Command::ASEN, "ASEN", ValueType::Integer},
+        {Command::TCINPARALLEL, "TCINPARALLEL", ValueType::Integer},
+        {Command::TC1KEYPOL, "TC1KEYPOL", ValueType::Integer},
+        {Command::TC2KEYPOL, "TC2KEYPOL", ValueType::Integer},
+        {Command::CONNIN1DEFVOL, "CONNIN1DEFVOL", ValueType::Integer},
+        {Command::CONNIN2DEFVOL, "CONNIN2DEFVOL", ValueType::Integer},
+        {Command::CONNIN1, "CONNIN1", ValueType::Integer},
+        {Command::CONNIN2, "CONNIN2", ValueType::Integer},
+        {Command::CONNOUT1POL, "CONNOUT1POL", ValueType::Integer},
+        {Command::CONNOUT2POL, "CONNOUT2POL", ValueType::Integer},
+        {Command::CONNOUT1, "CONNOUT1", ValueType::Integer},
+        {Command::CONNOUT2, "CONNOUT2", ValueType::Integer},
+        {Command::FAN1MAINTEMP, "FAN1MAINTEMP", ValueType::Integer},
+        {Command::FAN2MAINTEMP, "FAN2MAINTEMP", ValueType::Integer},
+        {Command::CONNIN, "CONNIN", ValueType::Integer},
+        {Command::CONNINDEFVOL, "CONNINDEFVOL", ValueType::Integer},
+        {Command::CONNOUT, "CONNOUT", ValueType::Integer},
+        {Command::CONNOUTPOL, "CONNOUTPOL", ValueType::Integer},
+        {Command::TCTSRELOAD, "TCTSRELOAD", ValueType::Text},
+        {Command::REPLY, "REPLY", ValueType::ReplyCode},
     };
+    static_assert([] {
+        for (std::size_t i = 0; i < std::size(commands); ++i)
+            if (static_cast<std::size_t>(commands[i].command) != i) return false;
+        return true;
+    }());
+
+    static constexpr const CommandSpec *specOf(Command command) noexcept
+    {
+        const auto i = static_cast<std::size_t>(command);
+        return i < std::size(commands) ? &commands[i] : nullptr;
+    }
+
+    static const CommandSpec *specOf(QByteArrayView name)
+    {
+        static const auto byName = [] {
+            QHash<QByteArrayView, const CommandSpec *> index;
+            index.reserve(std::size(commands));
+            for (const auto &entry : commands) index.insert(entry.name, &entry);
+            return index;
+        }();
+        return byName.value(name, nullptr);
+    }
+
+    static bool appendValue(QByteArray &body, ValueType type, const QVariant &value, bool hasAddress)
+    {
+        if (type == ValueType::Text) {
+            if (value.typeId() != QMetaType::QString) return false;
+            for (QChar ch : value.toString()) {
+                // '#' 与 CR 为串口保留字符；无地址时 '@' 会被当作地址后缀。
+                if (ch.unicode() < 0x20 || ch.unicode() > 0x7e || ch == '#' || (ch == '@' && !hasAddress))
+                    return false;
+                body += ch.toLatin1();
+            }
+            return true;
+        }
+
+        if (value.isNull()) return false;
+        QByteArray digits;
+        switch (value.typeId()) {
+        case QMetaType::Double: case QMetaType::Float: {
+            const double n = value.toDouble();
+            if (type != ValueType::Real || !std::isfinite(n)) return false;
+            digits = QByteArray::number(n, 'g', QLocale::FloatingPointShortest);
+            break;
+        }
+        case QMetaType::UInt: case QMetaType::ULong: case QMetaType::ULongLong:
+        case QMetaType::UShort: case QMetaType::UChar: {
+            const auto n = value.toULongLong();
+            if (type == ValueType::Integer && n > std::numeric_limits<qlonglong>::max()) return false;
+            digits = QByteArray::number(n);
+            break;
+        }
+        case QMetaType::Int: case QMetaType::Long: case QMetaType::LongLong:
+        case QMetaType::Short: case QMetaType::SChar:
+            digits = QByteArray::number(value.toLongLong());
+            break;
+        default:
+            return false;
+        }
+        if (type == ValueType::ReplyCode && (digits.size() != 1 || digits[0] > '8')) return false;
+        body += digits;
+        return true;
+    }
 
     static QVariant decode(ValueType type, QByteArrayView value)
     {

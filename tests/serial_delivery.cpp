@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 namespace
@@ -67,6 +68,36 @@ int main(int argc, char **argv)
     framer.feed("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r", t2, record);
     require(bodies == std::vector<QByteArray>{"CMD:REPLY=1@255"}, "address suffix on checked frames");
 
+    using P = Tcm232::Protocol;
+    using M = P::Module;
+    using C = P::Command;
+    const QVariant query(QMetaType::fromType<P::Query>());
+    const QVariant save(QMetaType::fromType<P::Save>());
+    require(P::nameOf(C::TCTSCOEFF_0) == "TCTSCOEFF:0" && P::nameOf(static_cast<C>(-1)).isEmpty(), "command name");
+    require(P::pack(0, M::TC1, C::TCSW, 1) == "TC1:TCSW=1@0", "integer and explicit zero address");
+    require(P::pack(255, M::TC2, C::TCADJTEMP, -25.1) == "TC2:TCADJTEMP=-25.1@255", "real assignment");
+    require(P::pack({}, M::SYSTEM, C::SYSSN, QString()) == "SYSTEM:SYSSN=", "empty text");
+    require(P::pack({}, M::TC1, C::TCOE, QVariant()).isEmpty()
+            && P::pack({}, M::TC1, C::TCOE, 1.5).isEmpty()
+            && P::pack({}, M::TC1, C::TCADJTEMP, std::numeric_limits<double>::infinity()).isEmpty()
+            && P::pack({}, M::CMD, C::REPLY, 9).isEmpty()
+            && P::pack({}, M::SYSTEM, C::SYSSN, QStringLiteral("abc\r")).isEmpty(), "invalid values");
+    require(P::pack({}, static_cast<M>(-1), C::TCOE, query).isEmpty()
+            && P::pack({}, M::TC1, static_cast<C>(-1), save).isEmpty(), "invalid ids");
+    for (const QByteArray wire : {"SYSTEM:SYSSN=00123", "CMD:REPLY=8@254", "TC2:TCTSCOEFF:0!@0",
+                                  "TC1:TCACTTEMP?", "TC2:TCADJTEMP=-0.00012345678901234567"}) {
+        const auto decoded = P::parse(wire);
+        const auto *pkt = std::get_if<P::Packet>(&decoded);
+        require(pkt != nullptr, "parse before packing");
+        const auto packed = P::pack(pkt->address, pkt->module, pkt->command, pkt->value);
+        const auto again = P::parse(packed);
+        const auto *other = std::get_if<P::Packet>(&again);
+        require(other && other->address == pkt->address && other->module == pkt->module
+                && other->command == pkt->command && other->value.metaType() == pkt->value.metaType()
+                && (pkt->value.isNull() ? (other->value.isNull() && packed == wire) : other->value == pkt->value),
+                "pack/parse round trip");
+    }
+
     FakeSerialPort::reset();
     Probe handle;
     require(handle.open(params), "open rejected");
@@ -75,13 +106,13 @@ int main(int argc, char **argv)
     FakeSerialPort::enqueue("D\rCMD:REPLY=1@0#70\rCMD:REPLY=1@0#7d\rCMD:REPLY=1@0#7\r"
                             "TC2:TCACTTEMP=24.90@0\r");
     require(handle.available.tryAcquire(3, 3000), "serial read timed out");
-    require(handle.send(QByteArray("TC1:TCACTTEMP?")), "send failed");
-    require(handle.send(QByteArray("TC2:TCOE?")), "consecutive send failed");
+    require(handle.send(P::pack({}, M::TC1, C::TCACTTEMP, query)), "send failed");
+    require(handle.send(P::pack(0, M::TC2, C::TCADJTEMP, save)), "consecutive send failed");
     require(!handle.send(QByteArray("TC1:TCACTTEMP?\r")) && !handle.send(QByteArray()), "invalid body sent");
     handle.close();
     require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1@0",
                                                        "TC2:TCACTTEMP=24.90@0"}, "serial bodies");
-    require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r", "TC2:TCOE?\r"}, "wire framing");
+    require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r", "TC2:TCADJTEMP!@0\r"}, "wire framing");
     require(FakeSerialPort::livePorts() == 0, "port not released");
 #ifdef TEST_TCM232_DEVICE
     verifyDevice();
