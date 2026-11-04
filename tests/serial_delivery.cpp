@@ -31,6 +31,10 @@ private:
 };
 }
 
+#ifdef TEST_TCM232_DEVICE
+void verifyDevice();
+#endif
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -78,4 +82,7 @@ int main(int argc, char **argv)
                                                        "TC2:TCACTTEMP=24.90@0"}, "serial bodies");
     require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r"}, "wire framing");
     require(FakeSerialPort::livePorts() == 0, "port not released");
+#ifdef TEST_TCM232_DEVICE
+    verifyDevice();
+#endif
 }

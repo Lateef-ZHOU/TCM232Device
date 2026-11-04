@@ -1,9 +1,26 @@
 #pragma once
 #include <memory>
+#include <QByteArrayView>
 #include <SerialHandle.h>
 
 namespace Tcm232
 {
+namespace detail
+{
+inline int addressValue(QByteArrayView digits) noexcept
+{
+    if (digits.isEmpty() || digits.size() > 3)
+        return -1;
+    int value = 0;
+    for (const char digit : digits) {
+        if (digit < '0' || digit > '9')
+            return -1;
+        value = 10 * value + (digit - '0');
+    }
+    return value <= 255 ? value : -1;
+}
+}
+
 class Framer
 {
 public:
@@ -45,17 +62,7 @@ private:
         if (body_.size() - hash != 3)
             return false;
         const auto address = body_.lastIndexOf('@', hash);
-        if (address <= 0 || hash - address < 2 || hash - address > 4)
-            return false;
-        int value = 0;
-        for (auto i = address + 1; i < hash; ++i)
-        {
-            const char digit = body_.at(i);
-            if (digit < '0' || digit > '9')
-                return false;
-            value = 10 * value + (digit - '0');
-        }
-        if (value > 255)
+        if (address <= 0 || detail::addressValue(QByteArrayView(body_).sliced(address + 1, hash - address - 1)) < 0)
             return false;
 
         unsigned char sum = 0;
