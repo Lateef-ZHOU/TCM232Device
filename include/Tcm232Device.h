@@ -23,9 +23,9 @@ public:
 
 Q_SIGNALS:
     void lockChanged(HandleCore::ResourcePhase phase) override;
-    // address 为 -1 表示这条回报未携带地址。参数名保留全部层级，值保留设备原文。
-    void parameterReported(RxTime at, QByteArray name, QByteArray value, int address);
-    void commandReplied(RxTime at, int code, int address);
+    void parameterReported(RxTime at, Tcm232::Protocol::Module module, QByteArray parameter,
+                           QVariant value, std::optional<quint8> address);
+    void commandReplied(RxTime at, int code, std::optional<quint8> address);
 
 private:
     using Handle::send;
@@ -33,18 +33,29 @@ private:
 
     void onData(const QByteArray &body, RxTime at) final
     {
-        const auto reply = Protocol::parseReply(body);
-        if (const auto *p = std::get_if<Protocol::Parameter>(&reply)) {
-            Q_EMIT parameterReported(at, p->name.toByteArray(), p->value.toByteArray(), p->address);
-        } else if (const auto *ack = std::get_if<Protocol::CommandReply>(&reply)) {
-            Q_EMIT commandReplied(at, ack->code, ack->address);
-        } else {
-            switch (std::get<Protocol::Error>(reply)) {
+        const auto parsed = Protocol::parse(body);
+        if (const auto *error = std::get_if<Protocol::Error>(&parsed)) {
+            switch (*error) {
             case Protocol::Error::Address: Q_EMIT logMessage(QStringLiteral("温控回报地址无效")); break;
-            case Protocol::Error::ParameterName: Q_EMIT logMessage(QStringLiteral("温控回报缺少有效参数名或等号")); break;
-            case Protocol::Error::ReplyCode: Q_EMIT logMessage(QStringLiteral("温控命令应答码无效")); break;
+            case Protocol::Error::ModuleName: Q_EMIT logMessage(QStringLiteral("温控回报模块未知")); break;
+            case Protocol::Error::Syntax: Q_EMIT logMessage(QStringLiteral("温控回报语法无效")); break;
             }
+            return;
         }
+        const auto &packet = std::get<Protocol::Packet>(parsed);
+        if (packet.operation != Protocol::Operation::Equals) {
+            Q_EMIT logMessage(QStringLiteral("温控收到查询或保存命令，预期为带值回报"));
+            return;
+        }
+        const auto value = Protocol::parseValue(packet);
+        if (!value.isValid()) {
+            Q_EMIT logMessage(QStringLiteral("温控回报参数值无效：") + QString::fromLatin1(packet.parameter));
+            return;
+        }
+        if (packet.module == Protocol::Module::CMD)
+            Q_EMIT commandReplied(at, value.toInt(), packet.address);
+        else
+            Q_EMIT parameterReported(at, packet.module, packet.parameter.toByteArray(), value, packet.address);
     }
 };
 }
