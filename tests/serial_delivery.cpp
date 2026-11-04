@@ -71,9 +71,12 @@ int main(int argc, char **argv)
     using P = Tcm232::Protocol;
     using M = P::Module;
     using C = P::Command;
-    const QVariant query(QMetaType::fromType<P::Query>());
-    const QVariant save(QMetaType::fromType<P::Save>());
+    const auto query = QVariant::fromValue(P::ValueType::Query);
+    const auto save = QVariant::fromValue(P::ValueType::Save);
     require(P::nameOf(C::TCTSCOEFF_0) == "TCTSCOEFF:0" && P::nameOf(static_cast<C>(-1)).isEmpty(), "command name");
+    require(P::pack({}, M::TC1, C::TCSW, 0) == "TC1:TCSW=0"
+            && P::pack({}, M::TC1, C::TCSW, QVariant::fromValue(P::ValueType::Integer)).isEmpty(),
+            "integer payload versus type descriptor");
     require(P::pack(0, M::TC1, C::TCSW, 1) == "TC1:TCSW=1@0", "integer and explicit zero address");
     require(P::pack(255, M::TC2, C::TCADJTEMP, -25.1) == "TC2:TCADJTEMP=-25.1@255", "real assignment");
     require(P::pack({}, M::SYSTEM, C::SYSSN, QString()) == "SYSTEM:SYSSN=", "empty text");
@@ -94,7 +97,7 @@ int main(int argc, char **argv)
         const auto *other = std::get_if<P::Packet>(&again);
         require(other && other->address == pkt->address && other->module == pkt->module
                 && other->command == pkt->command && other->value.metaType() == pkt->value.metaType()
-                && (pkt->value.isNull() ? (other->value.isNull() && packed == wire) : other->value == pkt->value),
+                && other->value == pkt->value,
                 "pack/parse round trip");
     }
 

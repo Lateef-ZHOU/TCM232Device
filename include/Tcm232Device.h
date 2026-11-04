@@ -45,8 +45,7 @@ private:
             return;
         }
         const auto &packet = std::get<Protocol::Packet>(parsed);
-        if (packet.value.metaType() == QMetaType::fromType<Protocol::Query>()
-            || packet.value.metaType() == QMetaType::fromType<Protocol::Save>()) {
+        if (packet.value.metaType() == QMetaType::fromType<Protocol::ValueType>()) {
             Q_EMIT logMessage(QStringLiteral("温控收到查询或保存命令，预期为带值回报"));
             return;
         }

@@ -17,8 +17,7 @@ namespace Tcm232
 struct Protocol
 {
     enum class Module { TC1, TC2, TA1, TA2, NTS1, NTS2, PWG1, PWG2, FAN1, FAN2, SYSTEM, SYS, RS485, UIRS232, MEMORY, PARAM, PCB, MUI, BOARDCONFIG, CMD };
-    struct Query {};
-    struct Save {};
+    enum class ValueType { Real, Integer, Text, ReplyCode, Query, Save };
     enum class Error { Address, ModuleName, Syntax, CommandName, Value };
 
     enum class Command {
@@ -104,10 +103,12 @@ struct Protocol
         QByteArray body = moduleName.toByteArray();
         body += ':';
         body.append(spec->name);
-        if (value.metaType() == QMetaType::fromType<Query>()) {
-            body += '?';
-        } else if (value.metaType() == QMetaType::fromType<Save>()) {
-            body += '!';
+        if (value.metaType() == QMetaType::fromType<ValueType>()) {
+            switch (value.value<ValueType>()) {
+            case ValueType::Query: body += '?'; break;
+            case ValueType::Save: body += '!'; break;
+            default: return {};
+            }
         } else {
             body += '=';
             if (!appendValue(body, spec->type, value, address.has_value())) return {};
@@ -119,7 +120,7 @@ struct Protocol
         return body;
     }
 
-    // 主体已去除回车与校验；结果自持，查询和保存的 value 是带各自元类型的空 QVariant。
+    // 主体已去除回车与校验；结果自持，查询和保存的 value 是存放 ValueType 枚举的 QVariant。
     struct Packet {
         std::optional<quint8> address;
         Module module;
@@ -149,11 +150,10 @@ struct Protocol
                 const auto *field = specOf(line.sliced(colon + 1, i - colon - 1));
                 if (!field) return Error::CommandName;
 
-                if (c == '?')
-                    return Packet{address, *module, field->command, QVariant(QMetaType::fromType<Query>())};
-                if (c == '!')
-                    return Packet{address, *module, field->command, QVariant(QMetaType::fromType<Save>())};
-                auto value = decode(field->type, line.sliced(i + 1));
+                auto type = field->type;
+                if (c == '?') type = ValueType::Query;
+                if (c == '!') type = ValueType::Save;
+                auto value = decode(type, line.sliced(i + 1));
                 if (!value.isValid()) return Error::Value;
                 return Packet{address, *module, field->command, std::move(value)};
             }
@@ -185,7 +185,6 @@ struct Protocol
     }
 
 private:
-    enum class ValueType { Real, Integer, Text, ReplyCode };
     struct CommandSpec { Command command; QByteArrayView name; ValueType type; };
     // 按枚举顺序登记一次。下行按下标读取，上行哈希只索引同一条记录。
     inline static constexpr CommandSpec commands[] = {
@@ -421,6 +420,9 @@ private:
     {
         bool ok;
         switch (type) {
+        case ValueType::Query:
+        case ValueType::Save:
+            return QVariant::fromValue(type);
         case ValueType::Real: {
             const double number = value.toDouble(&ok);
             return ok && std::isfinite(number) ? QVariant(number) : QVariant();

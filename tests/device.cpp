@@ -40,11 +40,11 @@ void verifyDevice()
               "module table round trip");
     }
     const auto query = packet("TC1:TCACTTEMP?");
-    check(query.module == M::TC1 && query.value.metaType() == QMetaType::fromType<Protocol::Query>() && !query.address
-          && query.command == C::TCACTTEMP && query.value.isValid() && query.value.isNull(), "unaddressed query");
+    check(query.module == M::TC1 && query.value.metaType() == QMetaType::fromType<Protocol::ValueType>() && !query.address
+          && query.command == C::TCACTTEMP && query.value.value<Protocol::ValueType>() == Protocol::ValueType::Query, "unaddressed query");
     auto save = packet("TC2:TCADJTEMP!@0");
-    check(save.module == M::TC2 && save.value.metaType() == QMetaType::fromType<Protocol::Save>() && save.address == 0
-          && save.command == C::TCADJTEMP && save.value.isValid() && save.value.isNull(), "addressed save");
+    check(save.module == M::TC2 && save.value.metaType() == QMetaType::fromType<Protocol::ValueType>() && save.address == 0
+          && save.command == C::TCADJTEMP && save.value.value<Protocol::ValueType>() == Protocol::ValueType::Save, "addressed save");
     auto assignment = packet("TC2:TCADJTEMP=-25.125@255");
     const auto &temperature = assignment.value;
     check(assignment.address == 255 && assignment.command == C::TCADJTEMP

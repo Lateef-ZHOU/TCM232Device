@@ -8,9 +8,9 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；当前软件不限制发送间隔，仅在实机频繁漏响应时再评估。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
 
-`=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?` 和 `!` 返回带类型的空 QVariant，元类型分别为 `Protocol::Query` 和 `Protocol::Save`。按 metaType() 区分，空字符串赋值仍是 QString。官邸按结构化结果发出 parameterReported（模块枚举、命令枚举和值）或 commandReplied（仅 CMD:REPLY），并携带到达时刻和可选地址。具体温度显示、命令编排、轮询和 UI 待后续接入。
+`=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?` 和 `!` 由同一个 ValueType 枚举的 Query、Save 值表示，使用 QVariant::fromValue 存入；先辨元类型，再读枚举值，空字符串赋值仍是 QString。官邸按结构化结果发出 parameterReported（模块枚举、命令枚举和值）或 commandReplied（仅 CMD:REPLY），并携带到达时刻和可选地址。具体温度显示、命令编排、轮询和 UI 待后续接入。
 
-下行使用 `Protocol::pack(address, module, command, value)`；结果为可直接交给 Handle 的命令主体，失败返回空 QByteArray。Query / Save 类型分别产生 `?` / `!`，其他值按命令配置编码为 ASCII 赋值。地址省略与显式 0 分别生成无后缀与 `@0`。例如 `pack(0, Module::TC1, Command::TCSW, 1)` 返回 `TC1:TCSW=1@0`。封装不主动加可选异或校验，串口层负责追加 CR。收发使用同一命令描述表；`nameOf(Command)` 可单独取协议拼写。
+下行使用 `Protocol::pack(address, module, command, value)`；结果为可直接交给 Handle 的命令主体，失败返回空 QByteArray。ValueType::Query / ValueType::Save 枚举值分别产生 `?` / `!`，其他值按命令配置编码为 ASCII 赋值。地址省略与显式 0 分别生成无后缀与 `@0`。例如 `pack(0, Module::TC1, Command::TCSW, 1)` 返回 `TC1:TCSW=1@0`。封装不主动加可选异或校验，串口层负责追加 CR。收发使用同一命令描述表；`nameOf(Command)` 可单独取协议拼写。
 
 ## 验证
 
