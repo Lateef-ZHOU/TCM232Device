@@ -1,6 +1,4 @@
 #pragma once
-#include <chrono>
-#include <optional>
 #include <DeviceBase.h>
 #include "Tcm232Handle.h"
 
@@ -22,20 +20,13 @@ public:
     }
     ~Tcm232Device() override { PreDestruction(); }
 
-    // 同一设备的所有命令共用 >50 ms 的串口间隔；调用者可根据返回值安排下一次发送。
     [[nodiscard]] bool sendCommand(const QByteArray &body)
     {
         if (!canEngage({})) {
             Q_EMIT logMessage(QStringLiteral("温控器未连接或正被占用，命令未发送"));
             return false;
         }
-        if (lastWrite_ && std::chrono::steady_clock::now() - *lastWrite_ <= std::chrono::milliseconds(50)) {
-            Q_EMIT logMessage(QStringLiteral("温控命令间隔须大于 50 ms，命令未发送"));
-            return false;
-        }
-        const bool ok = Handle::send(body);
-        lastWrite_ = std::chrono::steady_clock::now();
-        return ok;
+        return Handle::send(body);
     }
 
 Q_SIGNALS:
@@ -79,6 +70,5 @@ private:
         }
     }
 
-    std::optional<std::chrono::steady_clock::time_point> lastWrite_;
 };
 }

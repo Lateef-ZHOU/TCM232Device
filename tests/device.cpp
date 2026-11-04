@@ -5,6 +5,7 @@
 #include <QThread>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace
 {
@@ -46,9 +47,8 @@ void verifyDevice()
         check(waitFor([&]{ return device.isOpen(); }), "connection timeout");
         check(device.tryLock(lock) && !device.sendCommand("TC1:TCOE?"), "lock admission");
         device.releaseLock(lock);
-        check(device.sendCommand("TC1:TCOE?") && !device.sendCommand("TC2:TCOE?"), "minimum interval");
-        QThread::msleep(65);
-        check(device.sendCommand("TC2:TCOE?"), "interval elapsed");
+        check(device.sendCommand("TC1:TCOE?") && device.sendCommand("TC2:TCOE?"), "consecutive queries");
+        check(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCOE?\r", "TC2:TCOE?\r"}, "query order on wire");
         FakeSerialPort::enqueue("CMD:REPLY=1@0#7D\rTC2:TCTSCOEFF:0=25.07\r");
         check(waitFor([&]{ return replies == 1 && values == 1; }), "queued device signals");
         check(device.tryLock(lock), "reacquire");
