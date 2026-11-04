@@ -1,6 +1,10 @@
 #include <Tcm232Handle.h>
 #include "FakeSerialPort.h"
+#ifdef TEST_TCM232_QML
+#include <QGuiApplication>
+#else
 #include <QCoreApplication>
+#endif
 #include <QSemaphore>
 #include <chrono>
 #include <cstdlib>
@@ -41,7 +45,12 @@ void verifyQml();
 
 int main(int argc, char **argv)
 {
+#ifdef TEST_TCM232_QML
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
+#else
     QCoreApplication app(argc, argv);
+#endif
     const auto params = Tcm232::Handle::parameters({QStringLiteral("controlled"), {}});
     require(params.baudRate == 57600 && params.dataBits == DataBits::D8
             && params.parity == SP_PARITY_NONE && params.stopBits == StopBits::One

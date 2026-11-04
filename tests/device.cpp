@@ -7,6 +7,20 @@
 #include <cstdlib>
 #include <iostream>
 
+// 与 HandleCore 的串口替身共用端口对象；枚举也不访问主机硬件。
+extern "C" {
+sp_return sp_list_ports(sp_port ***ports)
+{
+    auto **list = new sp_port *[2]{};
+    sp_get_port_by_name("controlled", &list[0]);
+    *ports = list;
+    return SP_OK;
+}
+char *sp_get_port_name(const sp_port *) { static char name[] = "controlled"; return name; }
+char *sp_get_port_description(const sp_port *) { static char description[] = "TCM232 test"; return description; }
+void sp_free_port_list(sp_port **ports) { sp_free_port(ports[0]); delete[] ports; }
+}
+
 namespace
 {
 void check(bool ok, const char *why)
@@ -80,7 +94,7 @@ void verifyDevice()
     const auto lock = std::make_shared<DeviceLock>(QStringLiteral("test"));
     int replies = 0, values = 0;
     {
-        Tcm232::Tcm232Device device;
+        Tcm232::Tcm232Device device(nullptr);
         QObject::connect(&device, &Tcm232::Tcm232Device::packetReceived, &device,
             [&](RxTime at, const Protocol::Packet &p) {
                 check(at != RxTime{}, "arrival time");

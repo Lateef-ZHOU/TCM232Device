@@ -10,7 +10,7 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 `=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?` 和 `!` 由同一个 ValueType 枚举的 Query、Save 值表示，使用 QVariant::fromValue 存入；先辨元类型，再读枚举值，空字符串赋值仍是 QString。设备通过 `packetReceived(RxTime at, const Tcm232::Packet &packet)` 从收包线程直接上传每条有效回报。方向异常的查询、保存及解析错误记录日志；合法的设备错误应答同样上传。
 
-界面端链接 `Lidar::Tcm232Qml` 并导入 `Lidar.Tcm232`（静态应用导入 Tcm232TypesPlugin）。`tcm232Packet` 只读开放 module、command、value、address。未带地址在 QML 中为 undefined，显式 @0 为数字 0。以 `packet.module === Tcm232Protocol.CMD && packet.command === Tcm232Protocol.REPLY` 识别命令应答；温度可通过 TC1 / TC2 与 TCACTTEMP 分流。类型登记在可选 QML 目标，`TCM232_WITH_QML=OFF` 只构建设备后端，`TCM232_WITH_DEVICE=OFF` 只构建串口传输。正式页面另行接入。
+界面端链接 `Lidar::Tcm232Qml` 并导入 `Lidar.Tcm232`（静态应用导入 Tcm232TypesPlugin）。`tcm232Packet` 只读开放 module、command、value、address。未带地址在 QML 中为 undefined，显式 @0 为数字 0。以 `packet.module === Tcm232Protocol.CMD && packet.command === Tcm232Protocol.REPLY` 识别命令应答；温度可通过 TC1 / TC2 与 TCACTTEMP 分流。类型登记在可选 QML 目标，`TCM232_WITH_QML=OFF` 只构建设备后端，`TCM232_WITH_DEVICE=OFF` 只构建串口传输。`Tcm232Module` 自持一个串口后端。温控1和风扇1分区仅显示各自回报，温控开关、实际输出状态与故障分开显示。连接后立即查询并每秒刷新，断开清空回报。调节温度和风扇启动温度的输入均为独立草稿；设定发送赋值并回查，保存直接发 `!`，不会先写入草稿。
 
 下行使用 `Protocol::pack(const Packet &packet)`；结果为可直接交给 Handle 的命令主体，失败返回空 QByteArray。ValueType::Query / ValueType::Save 枚举值分别产生 `?` / `!`，其他值按命令配置编码为 ASCII 赋值。地址省略与显式 0 分别生成无后缀与 `@0`。例如 `pack({0, Module::TC1, Command::TCSW, 1})` 返回 `TC1:TCSW=1@0`。封装不主动加可选异或校验，串口层负责追加 CR。收发使用同一命令描述表；`nameOf(Command)` 可单独取协议拼写。
 

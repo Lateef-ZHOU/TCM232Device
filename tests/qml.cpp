@@ -4,11 +4,13 @@
 #include <QElapsedTimer>
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QJSValue>
 #include <QtQml/qqmlextensionplugin.h>
 #include <memory>
 #include <vector>
 
 Q_IMPORT_QML_PLUGIN(Tcm232TypesPlugin)
+Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 
 class ReceiverProbe final : public QObject
 {
@@ -24,10 +26,70 @@ public:
     }
 };
 
+static void verifyPage(QQmlEngine &engine)
+{
+    FakeSerialPort::reset();
+    QQmlComponent component(&engine, "Lidar.Tcm232", "Tcm232Module");
+    std::unique_ptr<QObject> page(component.create());
+    if (!page) qFatal("%s", qPrintable(component.errorString()));
+    auto *device = page->property("deviceState").value<Tcm232::Tcm232Device *>();
+    if (!device || device->parent() != page.get() || device->isOpen()) qFatal("page ownership");
+    auto control = [&](const char *name) {
+        auto *item = page->findChild<QObject *>(QString::fromLatin1(name));
+        if (!item) qFatal("missing control %s", name);
+        return item;
+    };
+    auto wait = [](auto predicate) {
+        QElapsedTimer limit;
+        limit.start();
+        while (!predicate() && limit.elapsed() < 3000) {
+            QCoreApplication::processEvents();
+            QThread::msleep(1);
+        }
+        if (!predicate()) qFatal("timed out waiting for page");
+    };
+    if (!device->open(QStringLiteral("controlled"))) qFatal("open");
+    wait([] { return FakeSerialPort::writes().size() >= 10; });
+    for (const auto &body : FakeSerialPort::writes())
+        if (!body.endsWith("?\r")) qFatal("connect must only query");
+    auto *tc = control("tcDraft");
+    auto *fan = control("fanDraft");
+    tc->setProperty("text", "32.5");
+    fan->setProperty("text", "40");
+    FakeSerialPort::enqueue("TC1:TCADJTEMP=18\rFAN1:FANSTARTTEMP=31\rTC1:TCSW=1\rTC1:TCOE=0\r"
+                            "TC1:TCACTVOL=4.5\rTC1:TCACTCUR=0.6\rTC1:TCACTTEMP=22\r"
+                            "FAN1:FANACTTEMP=27\rFAN1:FANSPEED=800\rTC2:TCADJTEMP=99\r"
+                            "CMD:REPLY=4\rTC1:TCERRORSTATUS=254\r");
+    wait([&] { return control("errors")->property("text").toString() == QStringLiteral("外部错误"); });
+    using C = Tcm232::Command;
+    auto report = [&](C command) {
+        return page->property("reports").value<QJSValue>().property(QString::number(int(command))).toNumber();
+    };
+    if (report(C::TCADJTEMP) != 18 || report(C::FANSTARTTEMP) != 31 || report(C::TCSW) != 1
+        || report(C::TCOE) != 0 || report(C::TCACTVOL) != 4.5 || report(C::TCACTCUR) != 0.6
+        || report(C::TCACTTEMP) != 22 || report(C::FANACTTEMP) != 27 || report(C::FANSPEED) != 800)
+        qFatal("wrong module, setting or measurement");
+    if (tc->property("text") != "32.5" || fan->property("text") != "40") qFatal("reports changed drafts");
+    auto click = [&](const char *name, std::vector<QByteArray> expected) {
+        const auto before = FakeSerialPort::writes().size();
+        if (!QMetaObject::invokeMethod(control(name), "clicked")) qFatal("click failed");
+        const auto writes = FakeSerialPort::writes();
+        if (std::vector<QByteArray>(writes.begin() + before, writes.end()) != expected)
+            qFatal("unexpected serial command(s) from %s", name);
+    };
+    click("tcSave", {"TC1:TCADJTEMP!\r"});
+    click("fanSave", {"FAN1:FANSTARTTEMP!\r"});
+    click("tcSet", {"TC1:TCADJTEMP=32.5\r", "TC1:TCADJTEMP?\r"});
+    click("fanSet", {"FAN1:FANSTARTTEMP=40\r", "FAN1:FANSTARTTEMP?\r"});
+    click("outputOn", {"TC1:TCSW=1\r", "TC1:TCSW?\r"});
+    device->close();
+    wait([&] { return control("errors")->property("text").toString() == QStringLiteral("—"); });
+}
+
 void verifyQml()
 {
     FakeSerialPort::reset();
-    Tcm232::Tcm232Device device;
+    Tcm232::Tcm232Device device(nullptr);
     ReceiverProbe probe;
     QQmlEngine engine;
     QQmlComponent component(&engine);
@@ -78,6 +140,7 @@ void verifyQml()
         || e[1].route != "ack" || e[1].value.toInt() != 4 || !e[1].address.isValid() || e[1].address.toInt() != 0
         || e[2].route != "second" || e[2].value.toDouble() != -1.5 || e[2].address.toInt() != 255)
         qFatal("wrong QML route or fields");
+    verifyPage(engine);
 }
 
 #include "qml.moc"
