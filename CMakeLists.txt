@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.28)
 project(TCM232Device LANGUAGES CXX)
 
+option(TCM232_WITH_DEVICE "Build the standalone temperature controller backend" ON)
+option(TCM232_WITH_QML "Build the temperature controller QML page" ${TCM232_WITH_DEVICE})
+
 if(NOT TARGET Lidar::HandleCore)
     include(FetchContent)
     set(HANDLECORE_WITH_SERIAL ON)
+    if(TCM232_WITH_DEVICE AND TCM232_WITH_QML)
+        set(HANDLECORE_WITH_PCAP ON)
+    endif()
     FetchContent_Declare(lidar_handle_core
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/HandleCore.git
         GIT_TAG 9cf50f16613a828e0f18bf42285b2e5a67e3a16d)
@@ -23,7 +29,6 @@ if(MSVC)
     target_compile_options(Tcm232Serial PUBLIC /utf-8)
 endif()
 
-option(TCM232_WITH_DEVICE "Build the standalone temperature controller backend" ON)
 if(TCM232_WITH_DEVICE)
     if(NOT TARGET Lidar::DeviceCore)
         include(FetchContent)
@@ -38,7 +43,6 @@ if(TCM232_WITH_DEVICE)
     target_link_libraries(Tcm232Device PUBLIC Lidar::Tcm232Serial Lidar::DeviceCore)
 endif()
 
-option(TCM232_WITH_QML "Build the temperature controller QML page" ${TCM232_WITH_DEVICE})
 if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
     find_package(Qt6 6.11.2 REQUIRED COMPONENTS Quick Qml)
     if(NOT TARGET Lidar::UICore)
@@ -55,6 +59,10 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
     endif()
     get_target_property(chart_dir Lidar::ChartCore QT_QML_MODULE_OUTPUT_DIRECTORY)
     get_target_property(ui_dir Lidar::UICore QT_QML_MODULE_OUTPUT_DIRECTORY)
+    add_library(Tcm232Udp STATIC include/Tcm232UdpDevice.h)
+    set_target_properties(Tcm232Udp PROPERTIES AUTOMOC ON POSITION_INDEPENDENT_CODE ON)
+    target_link_libraries(Tcm232Udp PUBLIC Lidar::Pcap Lidar::DeviceCore Lidar::Tcm232Serial)
+    qt_extract_metatypes(Tcm232Udp)
     qt_extract_metatypes(Tcm232Device)
     qt_extract_metatypes(Tcm232Serial)
     set(CMAKE_AUTOMOC ON)
@@ -62,10 +70,10 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
         CLASS_NAME Tcm232TypesPlugin RESOURCE_PREFIX /qt/qml
         OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Lidar/Tcm232"
         IMPORT_PATH "${ui_dir}/../.." "${chart_dir}/../.." DEPENDENCIES Lidar.UI Lidar.Charts
-        QML_FILES Tcm232Module.qml
+        QML_FILES Tcm232Module.qml Tcm232Page.qml Tcm232UdpModule.qml
         SOURCES include/Tcm232QmlTypes.h)
     add_library(Lidar::Tcm232Qml ALIAS Tcm232Types)
-    target_link_libraries(Tcm232Types PUBLIC Lidar::Tcm232Device Lidar::UICore Lidar::ChartCore Qt6::Quick)
+    target_link_libraries(Tcm232Types PUBLIC Tcm232Udp Lidar::Tcm232Device Lidar::UICore Lidar::ChartCore Qt6::Quick)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

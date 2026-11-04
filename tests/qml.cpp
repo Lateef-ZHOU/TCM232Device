@@ -65,7 +65,9 @@ static void verifyPage(QQmlEngine &engine)
         if (gap.isValid() && gap.elapsed() < 55) qFatal("commands not spaced apart");
         gap.start();
     };
-    for (const auto &query : round) next(query);
+    next("SYSTEM:SYSMODEL?\r");
+    next("SYSTEM:SYSSN?\r");
+    FakeSerialPort::enqueue("SYSTEM:SYSSN=232-TEST\r");
     next(round[0]);
     auto *tc = control("tcDraft");
     auto *fan = control("fanDraft");
@@ -89,6 +91,13 @@ static void verifyPage(QQmlEngine &engine)
     if (pages.count() != 1 || sections.count() != 3
         || sections.at(1)->property("title") != QStringLiteral("温控1")
         || sections.at(2)->property("title") != QStringLiteral("风扇1")) qFatal("wrong page layout");
+    auto *initial = pages.at(0)->findChild<LaserTelemetryItem *>("temperatures");
+    initial->applyHover(1e12);
+    if (initial->hover()) qFatal("partial round plotted");
+    for (size_t i=1; i<round.size(); ++i) next(round[i]);
+    next("SYSTEM:SYSMODEL?\r");
+    FakeSerialPort::enqueue("SYSTEM:SYSMODEL=TCM232\r");
+    next(round[0]);
     auto panel = [&](const char *name, const QStringList &keys) {
         auto *item = pages.at(0)->findChild<LaserTelemetryItem *>(name);
         if (!item || item->channelKeys() != keys) qFatal("wrong chart channels");
@@ -109,6 +118,10 @@ static void verifyPage(QQmlEngine &engine)
     temps->applyHover(1e12);
     if (temps->hover()->at != lastSample) qFatal("RPM added a chart sample");
     Q_EMIT device->packetReceived(RxTime(std::chrono::seconds(2000000001)), {{}, Tcm232::Module::TC1, C::TCACTTEMP, 22.0});
+    temps->applyHover(1e12);
+    if (temps->hover()->at != lastSample) qFatal("early chart update");
+    for (size_t i=1; i<round.size(); ++i) next(round[i]);
+    next(round[0]);
     for (auto *item : {temps, volts, amps}) {
         item->applyHover(1e12);
         if (item->hover()->at != 2000000001) qFatal("steady reading did not advance all plots together");
@@ -136,7 +149,7 @@ static void verifyPage(QQmlEngine &engine)
     click("tcSave");
     if (!device->open(QStringLiteral("controlled"))) qFatal("reopen");
     gap.invalidate();
-    next(round[0]); // 关闭前和离线时点击的命令均不在新连接中重放。
+    next("SYSTEM:SYSMODEL?\r"); // 关闭前和离线时点击的命令均不在新连接中重放。
     device->close();
 }
 
