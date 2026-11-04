@@ -76,11 +76,12 @@ int main(int argc, char **argv)
                             "TC2:TCACTTEMP=24.90@0\r");
     require(handle.available.tryAcquire(3, 3000), "serial read timed out");
     require(handle.send(QByteArray("TC1:TCACTTEMP?")), "send failed");
+    require(handle.send(QByteArray("TC2:TCOE?")), "consecutive send failed");
     require(!handle.send(QByteArray("TC1:TCACTTEMP?\r")) && !handle.send(QByteArray()), "invalid body sent");
     handle.close();
     require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1@0",
                                                        "TC2:TCACTTEMP=24.90@0"}, "serial bodies");
-    require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r"}, "wire framing");
+    require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r", "TC2:TCOE?\r"}, "wire framing");
     require(FakeSerialPort::livePorts() == 0, "port not released");
 #ifdef TEST_TCM232_DEVICE
     verifyDevice();

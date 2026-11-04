@@ -1,6 +1,7 @@
 #pragma once
 #include <DeviceBase.h>
 #include "Tcm232Handle.h"
+#include "Tcm232Protocol.h"
 
 namespace Tcm232
 {
@@ -20,15 +21,6 @@ public:
     }
     ~Tcm232Device() override { PreDestruction(); }
 
-    [[nodiscard]] bool sendCommand(const QByteArray &body)
-    {
-        if (!canEngage({})) {
-            Q_EMIT logMessage(QStringLiteral("温控器未连接或正被占用，命令未发送"));
-            return false;
-        }
-        return Handle::send(body);
-    }
-
 Q_SIGNALS:
     void lockChanged(HandleCore::ResourcePhase phase) override;
     // address 为 -1 表示这条回报未携带地址。参数名保留全部层级，值保留设备原文。
@@ -41,34 +33,18 @@ private:
 
     void onData(const QByteArray &body, RxTime at) final
     {
-        QByteArrayView line(body);
-        int address = -1;
-        const auto suffix = line.lastIndexOf('@');
-        if (suffix >= 0) {
-            address = detail::addressValue(line.sliced(suffix + 1));
-            if (address < 0) {
-                Q_EMIT logMessage(QStringLiteral("温控回报地址无效"));
-                return;
-            }
-            line = line.first(suffix);
-        }
-        const auto eq = line.indexOf('=');
-        if (eq < 1 || !line.first(eq).contains(':')) {
-            Q_EMIT logMessage(QStringLiteral("温控回报缺少模块参数名或等号"));
-            return;
-        }
-        const auto name = line.first(eq);
-        const auto value = line.sliced(eq + 1);
-        if (name == "CMD:REPLY") {
-            if (value.size() != 1 || value.front() < '0' || value.front() > '8') {
-                Q_EMIT logMessage(QStringLiteral("温控命令应答码无效"));
-                return;
-            }
-            Q_EMIT commandReplied(at, value.front() - '0', address);
+        const auto reply = Protocol::parseReply(body);
+        if (const auto *p = std::get_if<Protocol::Parameter>(&reply)) {
+            Q_EMIT parameterReported(at, p->name.toByteArray(), p->value.toByteArray(), p->address);
+        } else if (const auto *ack = std::get_if<Protocol::CommandReply>(&reply)) {
+            Q_EMIT commandReplied(at, ack->code, ack->address);
         } else {
-            Q_EMIT parameterReported(at, name.toByteArray(), value.toByteArray(), address);
+            switch (std::get<Protocol::Error>(reply)) {
+            case Protocol::Error::Address: Q_EMIT logMessage(QStringLiteral("温控回报地址无效")); break;
+            case Protocol::Error::ParameterName: Q_EMIT logMessage(QStringLiteral("温控回报缺少有效参数名或等号")); break;
+            case Protocol::Error::ReplyCode: Q_EMIT logMessage(QStringLiteral("温控命令应答码无效")); break;
+            }
         }
     }
-
 };
 }

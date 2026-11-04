@@ -1,11 +1,11 @@
 #include <Tcm232Device.h>
+#include <Tcm232Protocol.h>
 #include "FakeSerialPort.h"
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QThread>
 #include <cstdlib>
 #include <iostream>
-#include <vector>
 
 namespace
 {
@@ -27,6 +27,22 @@ bool waitFor(auto predicate)
 
 void verifyDevice()
 {
+    using Tcm232::Protocol;
+    const auto parameter = Protocol::parseReply("SYSTEM:SYSCOMPANY=A B=C@255");
+    const auto *p = std::get_if<Protocol::Parameter>(&parameter);
+    check(p && p->name == "SYSTEM:SYSCOMPANY" && p->value == "A B=C" && p->address == 255, "raw string value");
+    const auto saved = Protocol::parseReply("CMD:REPLY=8");
+    const auto *ack = std::get_if<Protocol::CommandReply>(&saved);
+    check(ack && ack->code == 8 && ack->address == -1, "save acknowledgement");
+    const auto rejected = [](QByteArrayView line, Protocol::Error expected) {
+        const auto result = Protocol::parseReply(line);
+        const auto *error = std::get_if<Protocol::Error>(&result);
+        return error && *error == expected;
+    };
+    check(rejected("CMD:REPLY=9", Protocol::Error::ReplyCode), "undefined reply code");
+    check(rejected("TC1:TCOE=1@256", Protocol::Error::Address), "invalid address");
+    check(rejected("TC1::X=1", Protocol::Error::ParameterName), "empty name segment");
+    check(rejected("TC1:TCOE?", Protocol::Error::ParameterName), "query is not a reply");
     static_assert(std::derived_from<Tcm232::Tcm232Device, Device<Tcm232::Handle>>);
     FakeSerialPort::reset();
     const auto lock = std::make_shared<DeviceLock>(QStringLiteral("test"));
@@ -45,13 +61,9 @@ void verifyDevice()
             }, Qt::QueuedConnection);
         check(device.open(device.parameters({QStringLiteral("controlled"), {}})), "open");
         check(waitFor([&]{ return device.isOpen(); }), "connection timeout");
-        check(device.tryLock(lock) && !device.sendCommand("TC1:TCOE?"), "lock admission");
-        device.releaseLock(lock);
-        check(device.sendCommand("TC1:TCOE?") && device.sendCommand("TC2:TCOE?"), "consecutive queries");
-        check(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCOE?\r", "TC2:TCOE?\r"}, "query order on wire");
         FakeSerialPort::enqueue("CMD:REPLY=1@0#7D\rTC2:TCTSCOEFF:0=25.07\r");
         check(waitFor([&]{ return replies == 1 && values == 1; }), "queued device signals");
-        check(device.tryLock(lock), "reacquire");
+        check(device.tryLock(lock), "acquire");
         device.close();
         check(!device.holder() && !device.isOpen(), "close releases lock");
     }

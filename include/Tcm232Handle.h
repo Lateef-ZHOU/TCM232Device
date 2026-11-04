@@ -1,26 +1,10 @@
 #pragma once
 #include <memory>
-#include <QByteArrayView>
+#include "Tcm232Protocol.h"
 #include <SerialHandle.h>
 
 namespace Tcm232
 {
-namespace detail
-{
-inline int addressValue(QByteArrayView digits) noexcept
-{
-    if (digits.isEmpty() || digits.size() > 3)
-        return -1;
-    int value = 0;
-    for (const char digit : digits) {
-        if (digit < '0' || digit > '9')
-            return -1;
-        value = 10 * value + (digit - '0');
-    }
-    return value <= 255 ? value : -1;
-}
-}
-
 class Framer
 {
 public:
@@ -31,7 +15,7 @@ public:
         {
             if (byte == '\r')
             {
-                if (!body_.isEmpty() && acceptChecksum())
+                if (!body_.isEmpty() && Protocol::acceptChecksum(body_))
                     deliver(body_, at);
                 body_.clear();
                 discarding_ = false;
@@ -53,28 +37,6 @@ public:
     static constexpr qsizetype MaxBodyBytes = 4096;
 
 private:
-    // 有校验的行必须以 @地址#YY 收尾。异或包括 '#'，上传时保留地址。
-    bool acceptChecksum()
-    {
-        const auto hash = body_.indexOf('#');
-        if (hash < 0)
-            return true;
-        if (body_.size() - hash != 3)
-            return false;
-        const auto address = body_.lastIndexOf('@', hash);
-        if (address <= 0 || detail::addressValue(QByteArrayView(body_).sliced(address + 1, hash - address - 1)) < 0)
-            return false;
-
-        unsigned char sum = 0;
-        for (qsizetype i = 0; i <= hash; ++i)
-            sum ^= static_cast<unsigned char>(body_.at(i));
-        constexpr char hex[] = "0123456789ABCDEF";
-        if (body_.at(hash + 1) != hex[sum >> 4] || body_.at(hash + 2) != hex[sum & 15])
-            return false;
-        body_.truncate(hash);
-        return true;
-    }
-
     QByteArray body_;
     bool discarding_ = false;
 };
