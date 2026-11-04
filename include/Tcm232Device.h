@@ -52,7 +52,7 @@ private:
             Q_EMIT logMessage(QStringLiteral("温控回报参数值无效：") + QString::fromLatin1(packet.parameter));
             return;
         }
-        if (packet.module == Protocol::Module::CMD)
+        if (packet.module == Protocol::Module::CMD && packet.parameter == "REPLY")
             Q_EMIT commandReplied(at, value.toInt(), packet.address);
         else
             Q_EMIT parameterReported(at, packet.module, packet.parameter.toByteArray(), value, packet.address);

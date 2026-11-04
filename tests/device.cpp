@@ -51,6 +51,10 @@ void verifyDevice()
     check(Protocol::parseValue(packet("SYSTEM:SYSSN=00123")).toString() == "00123", "serial text");
     check(Protocol::parseValue(packet("SYSTEM:SYSCOMPANY=A B=C?!")).toString() == "A B=C?!", "preserve string value");
     check(Protocol::parseValue(packet("TC1:TCOE=1")).typeId() == QMetaType::LongLong, "option value");
+    // 人为交叉组合，只验证协议层的类型选择，不代表实物支持这些命令。
+    auto crossModule = Protocol::parseValue(packet("FAN1:TCACTTEMP=-2.5"));
+    check(crossModule.typeId() == QMetaType::Double && crossModule.toDouble() == -2.5, "type follows parameter");
+    check(!Protocol::parseValue(packet("FAN1:TCACTTEMP=oops")).isValid(), "cross-module numeric validation");
     check(!Protocol::parseValue(packet("TC2:TCACTTEMP=oops")).isValid(), "invalid numeric value");
     check(!Protocol::parseValue(packet("CMD:REPLY=9")).isValid(), "undefined reply code");
     check(Protocol::parseValue(packet("CMD:REPLY=8")).toInt() == 8, "save acknowledgement");
@@ -77,14 +81,19 @@ void verifyDevice()
             }, Qt::QueuedConnection);
         QObject::connect(&device, &Tcm232::Tcm232Device::parameterReported, &device,
             [&](RxTime at, M module, QByteArray name, QVariant value, std::optional<quint8> address) {
-                check(at != RxTime{} && module == M::TC2 && name == "TCTSCOEFF:0" && value.typeId() == QMetaType::QString
-                      && value.toString() == "25.07" && !address, "parameter");
+                if (module == M::CMD) {
+                    check(name == "TCOE" && value.typeId() == QMetaType::LongLong && value.toLongLong() == 0,
+                          "CMD with a different parameter is not an acknowledgement");
+                } else {
+                    check(at != RxTime{} && module == M::TC2 && name == "TCTSCOEFF:0" && value.typeId() == QMetaType::QString
+                          && value.toString() == "25.07" && !address, "parameter");
+                }
                 ++values;
             }, Qt::QueuedConnection);
         check(device.open(device.parameters({QStringLiteral("controlled"), {}})), "open");
         check(waitFor([&]{ return device.isOpen(); }), "connection timeout");
-        FakeSerialPort::enqueue("CMD:REPLY=1@0#7D\rTC2:TCTSCOEFF:0=25.07\r");
-        check(waitFor([&]{ return replies == 1 && values == 1; }), "queued device signals");
+        FakeSerialPort::enqueue("CMD:REPLY=1@0#7D\rTC2:TCTSCOEFF:0=25.07\rCMD:TCOE=0\r");
+        check(waitFor([&]{ return replies == 1 && values == 2; }), "queued device signals");
         check(device.tryLock(lock), "acquire");
         device.close();
         check(!device.holder() && !device.isOpen(), "close releases lock");
