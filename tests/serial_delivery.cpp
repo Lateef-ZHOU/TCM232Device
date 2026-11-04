@@ -59,17 +59,23 @@ int main(int argc, char **argv)
     framer.feed(limit + "x", t1, record);
     framer.feed("suffix\rTC1:TCOE=1\r", t2, record);
     require(bodies.size() == 5 && bodies[3] == limit && bodies.back() == "TC1:TCOE=1", "oversize resync");
+    bodies.clear();
+    framer.feed("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r", t2, record);
+    require(bodies == std::vector<QByteArray>{"CMD:REPLY=1@255"}, "address suffix on checked frames");
 
     FakeSerialPort::reset();
     Probe handle;
     require(handle.open(params), "open rejected");
     FakeSerialPort::enqueue("TC1:TCACTTEMP=");
-    FakeSerialPort::enqueue("25.01\rTC2:TCACTTEMP=24.90\r");
-    require(handle.available.tryAcquire(2, 3000), "serial read timed out");
+    FakeSerialPort::enqueue("25.01\rCMD:REPLY=1@0#7");
+    FakeSerialPort::enqueue("D\rCMD:REPLY=1@0#70\rCMD:REPLY=1@0#7d\rCMD:REPLY=1@0#7\r"
+                            "TC2:TCACTTEMP=24.90@0\r");
+    require(handle.available.tryAcquire(3, 3000), "serial read timed out");
     require(handle.send(QByteArray("TC1:TCACTTEMP?")), "send failed");
     require(!handle.send(QByteArray("TC1:TCACTTEMP?\r")) && !handle.send(QByteArray()), "invalid body sent");
     handle.close();
-    require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "TC2:TCACTTEMP=24.90"}, "serial bodies");
+    require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1@0",
+                                                       "TC2:TCACTTEMP=24.90@0"}, "serial bodies");
     require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r"}, "wire framing");
     require(FakeSerialPort::livePorts() == 0, "port not released");
 }
