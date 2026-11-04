@@ -92,34 +92,6 @@ struct Protocol
         return spec ? spec->name : QByteArrayView{};
     }
 
-    // 返回 Handle 接受的 ASCII 主体。空结果表示不能封装，回车由串口 Handle 添加。
-    [[nodiscard]] static QByteArray pack(std::optional<quint8> address, Module module, Command command,
-                                         const QVariant &value)
-    {
-        const auto moduleName = nameOf(module);
-        const auto *spec = specOf(command);
-        if (moduleName.isEmpty() || !spec) return {};
-
-        QByteArray body = moduleName.toByteArray();
-        body += ':';
-        body.append(spec->name);
-        if (value.metaType() == QMetaType::fromType<ValueType>()) {
-            switch (value.value<ValueType>()) {
-            case ValueType::Query: body += '?'; break;
-            case ValueType::Save: body += '!'; break;
-            default: return {};
-            }
-        } else {
-            body += '=';
-            if (!appendValue(body, spec->type, value, address.has_value())) return {};
-        }
-        if (address) {
-            body += '@';
-            body += QByteArray::number(*address);
-        }
-        return body;
-    }
-
     // 主体已去除回车与校验；结果自持，查询和保存的 value 是存放 ValueType 枚举的 QVariant。
     struct Packet {
         std::optional<quint8> address;
@@ -127,6 +99,33 @@ struct Protocol
         Command command;
         QVariant value;
     };
+
+    // 返回 Handle 接受的 ASCII 主体。空结果表示不能封装，回车由串口 Handle 添加。
+    [[nodiscard]] static QByteArray pack(const Packet &packet)
+    {
+        const auto moduleName = nameOf(packet.module);
+        const auto *spec = specOf(packet.command);
+        if (moduleName.isEmpty() || !spec) return {};
+
+        QByteArray body = moduleName.toByteArray();
+        body += ':';
+        body.append(spec->name);
+        if (packet.value.metaType() == QMetaType::fromType<ValueType>()) {
+            switch (packet.value.value<ValueType>()) {
+            case ValueType::Query: body += '?'; break;
+            case ValueType::Save: body += '!'; break;
+            default: return {};
+            }
+        } else {
+            body += '=';
+            if (!appendValue(body, spec->type, packet.value, packet.address.has_value())) return {};
+        }
+        if (packet.address) {
+            body += '@';
+            body += QByteArray::number(*packet.address);
+        }
+        return body;
+    }
 
     [[nodiscard]] static std::variant<Packet, Error> parse(QByteArrayView line)
     {
