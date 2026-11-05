@@ -6,7 +6,7 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 设备后端目标 `Lidar::Tcm232Device` 提供 final 类 `Tcm232::Tcm232Device`，通过 `Tcm232DeviceT<Transport>` 与网口后端共用同一套报文封装与解析。连接和锁都属于这个对象；末端析构先关停收包。桥接器只需串口层，可配置 `-DTCM232_WITH_DEVICE=OFF`。
 
-串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；串口 Handle 的 onTX 校验并补 CR 后排队，返回 Queued 表示接受；实际发送失败由 connSend 记录。首条立即发送，每次写入返回后以单次精确定时器冷却 100 ms；末条发完也保留冷却，期间的新命令等待，不重复封帧。定时器到点且队列为空则自然停止。AboutToRelease 同步清队列并停表，Released 在所属线程清除自动断线时的待发送项，不跨连接重放。队列和定时器仅在所属主线程使用。页面每秒一次提交完整查询集合，手动命令直接独立提交，不再保存另一份发送队列；实际串口间隔只由 Handle 保证。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
+串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；串口 Handle 的 onTX 校验并补 CR 后排队，返回 Queued 表示接受；实际发送失败由 connSend 记录。首条立即发送，每次写入返回后以单次精确定时器冷却 75 ms；末条发完也保留冷却，期间的新命令等待，不重复封帧。定时器到点且队列为空则自然停止。AboutToRelease 同步清队列并停表，Released 在所属线程清除自动断线时的待发送项，不跨连接重放。队列和定时器仅在所属主线程使用。页面每秒一次提交完整查询集合，手动命令直接独立提交，不再保存另一份发送队列；实际串口间隔只由 Handle 保证。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
 
 `=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?` 和 `!` 由同一个 ValueType 枚举的 Query、Save 值表示，使用 QVariant::fromValue 存入；先辨元类型，再读枚举值，空字符串赋值仍是 QString。设备通过 `packetReceived(RxTime at, const Tcm232::Packet &packet)` 从收包线程直接上传每条有效回报。方向异常的查询、保存及解析错误记录日志；合法的设备错误应答同样上传。
 
@@ -38,3 +38,5 @@ ctest --test-dir build -C Release --output-on-failure
 
 
 2026-11-05 后续：删除页面 pending、queueManual 和逐条 sendNext；改为 1 秒 queryRound。页面专项用可记录提交的后端验证每次整组十条、按钮同步提交且不插入额外查询、约 1 秒周期、三图统一更新及断开停表。真实串口节奏仍由已有 Handle 测试覆盖。Windows 增量构建及 CTest 1/1（5.38 秒）通过；未修改或重新部署板端 Handle/Bridge。本轮暂不推送。
+
+2026-11-05 冷却调整（用户定）：串口写入后的冷却从 100 ms 缩短为 75 ms，QML 仍每秒提交十项查询，手动命令独立提交。首条立即、尾条冷却、断开和重连清队列的机制保持。上述 100 ms 验证是调整前记录。Windows 完整专项 1/1（5.39 秒）、Linux 串口专项 1/1、Bridge 4/4，以及板上 ARM64 模拟转发与 DMA 验证通过。新日志为 build/{build,test}-paced75.log，部署和连续查询证据见 BridgeCore/VALIDATION.md。

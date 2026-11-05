@@ -52,7 +52,7 @@ public:
     {
         transmit_.setSingleShot(true);
         transmit_.setTimerType(Qt::PreciseTimer);
-        transmit_.setInterval(100);
+        transmit_.setInterval(75);
         QObject::connect(&transmit_, &QTimer::timeout, this, [this] { sendNext(); });
         QObject::connect(this, &Handle::connectionChanged, this, [this](HandleCore::ResourcePhase phase) {
             if (phase == HandleCore::ResourcePhase::AboutToRelease || phase == HandleCore::ResourcePhase::Released) {

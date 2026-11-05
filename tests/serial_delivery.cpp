@@ -138,12 +138,12 @@ int main(int argc, char **argv)
     require(!handle.send(QByteArray("TC1:TCACTTEMP?\r")) && !handle.send(QByteArray()), "invalid body sent");
     require(FakeSerialPort::writes().size() == 1, "first immediate, second must queue");
     require(waitFor([] { return FakeSerialPort::writes().size() == 2; }), "queued command not sent");
-    require(FakeSerialPort::writeTimes()[1] - FakeSerialPort::writeTimes()[0] >= std::chrono::milliseconds(100), "burst interval");
+    require(FakeSerialPort::writeTimes()[1] - FakeSerialPort::writeTimes()[0] >= std::chrono::milliseconds(75), "burst interval");
     // 第二条已经清空队列；冷却未结束时提交第三条，仍不可立即发送。
     require(handle.send(QByteArray("TC1:TCSW?")), "cooldown enqueue");
     require(FakeSerialPort::writes().size() == 2, "empty queue bypassed cooldown");
     require(waitFor([] { return FakeSerialPort::writes().size() == 3; }), "cooldown lost new command");
-    require(FakeSerialPort::writeTimes()[2] - FakeSerialPort::writeTimes()[1] >= std::chrono::milliseconds(100), "tail cooldown interval");
+    require(FakeSerialPort::writeTimes()[2] - FakeSerialPort::writeTimes()[1] >= std::chrono::milliseconds(75), "tail cooldown interval");
     (void)waitFor([] { return false; }, 150);
     require(handle.send(QByteArray("TC1:TCOE?")) && FakeSerialPort::writes().size() == 4, "idle first command delayed");
     require(handle.send(QByteArray("TC1:TCERRORSTATUS?")), "enqueue before close");
