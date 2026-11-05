@@ -206,16 +206,16 @@ ModulePage {
             ReadoutField {
                 caption: qsTr("输出开关")
                 text: root.switchText(Tcm232Protocol.TCSW)
-                DoubleButtonRow {
-                    firstAction: Action {
-                        objectName: "outputOn"
-                        text: qsTr("开启")
-                        onTriggered: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1)
-                    }
-                    secondAction: Action {
-                        text: qsTr("关闭")
-                        onTriggered: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0)
-                    }
+                Button {
+                    objectName: "outputOn"
+                    Layout.fillWidth: true
+                    text: qsTr("开启")
+                    onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 1)
+                }
+                Button {
+                    Layout.fillWidth: true
+                    text: qsTr("关闭")
+                    onClicked: root.deviceState.setParameter(Tcm232Protocol.TC1, Tcm232Protocol.TCSW, 0)
                 }
             }
             Readout {
