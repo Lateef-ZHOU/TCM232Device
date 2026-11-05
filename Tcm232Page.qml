@@ -218,19 +218,22 @@ ModulePage {
                     }
                 }
             }
-        }
-        MenuSeparator {
-            Layout.fillWidth: true
-        }
-        Readout {
-            objectName: "errors"
-            caption: qsTr("错误状态")
-            text: root.errorText()
+            Readout {
+                objectName: "errors"
+                caption: qsTr("错误状态")
+                text: root.errorText()
+            }
         }
     }
     readonly property Section fanSection: Section {
         title: qsTr("风扇1")
         ReadoutRow {
+            Temperature {
+                key: "fan"
+                caption: qsTr("启动温度")
+                module: Tcm232Protocol.FAN1
+                command: Tcm232Protocol.FANSTARTTEMP
+            }
             Readout {
                 caption: qsTr("实际温度")
                 text: root.valueText(Tcm232Protocol.FANACTTEMP, "°C")
@@ -239,12 +242,6 @@ ModulePage {
                 caption: qsTr("实际转速")
                 text: root.valueText(Tcm232Protocol.FANSPEED, "rpm")
             }
-        }
-        Temperature {
-            key: "fan"
-            caption: qsTr("启动温度")
-            module: Tcm232Protocol.FAN1
-            command: Tcm232Protocol.FANSTARTTEMP
         }
     }
     mainPages: [
