@@ -232,10 +232,9 @@ ModulePage {
         }
         FieldRow {
             label: qsTr("错误状态")
-            Label {
+            FormLabel {
                 objectName: "errors"
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
+                multiline: true
                 text: root.errorText()
             }
         }

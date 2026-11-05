@@ -47,3 +47,7 @@ ctest --test-dir build -C Release --output-on-failure
 ### 2026-11-05 公共视觉与连接布局
 
 串口与网口连接区使用 UICore ConnectionSection，型号/SN 使用 InfoRow；查询轮次、暂存值、整轮绘图和 75 ms 发送间隔不变。 本轮仅本地整理，未推送；Windows 集成验证记录见主程序维护操作。
+
+### 2026-11-05 错误正文限宽
+
+错误状态改用 FormLabel.multiline，完整换行并限制自然宽度，保留正常主题字号和颜色。错误解析、回报缓存、查询轮次、发送间隔和整轮绘图均未改。主程序 Windows 增量构建及八秒冒烟通过；仅本地提交，未推送。
