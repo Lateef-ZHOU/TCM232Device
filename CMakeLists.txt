@@ -48,7 +48,7 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
     if(NOT TARGET Lidar::UICore)
         include(FetchContent)
         FetchContent_Declare(lidar_uicore GIT_REPOSITORY https://github.com/Lateef-ZHOU/UICore.git
-            GIT_TAG 9769fdcd28a8a3fdf98f5dde6163e12c6de88563)
+            GIT_TAG a132e190914807abe8175413bca4240440e2f9ba)
         FetchContent_MakeAvailable(lidar_uicore)
     endif()
     if(NOT TARGET Lidar::ChartCore)

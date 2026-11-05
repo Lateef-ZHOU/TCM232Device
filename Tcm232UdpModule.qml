@@ -26,18 +26,14 @@ Tcm232Page {
                 onCommitted: i => value = i
             }
         }
-        RowLayout {
-            Layout.fillWidth: true
-            uniformCellSizes: true
-            spacing: 8
-            Button {
-                Layout.fillWidth: true
+        DoubleButtonRow {
+            firstAction: Action {
                 text: qsTr("连接")
-                onClicked: {
+                onTriggered: {
                     if (internals.device.open(interfaceSelector.value)) root.logMessage(qsTr("连接请求已提交"))
                 }
             }
-            Button { Layout.fillWidth: true; text: qsTr("断开"); onClicked: internals.device.close() }
+            secondAction: Action { text: qsTr("断开"); onTriggered: internals.device.close() }
         }
     }
 }

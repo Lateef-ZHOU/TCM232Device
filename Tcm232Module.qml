@@ -15,10 +15,9 @@ Tcm232Page {
             label: qsTr("串口")
             ChoiceBox { id: serial; Layout.fillWidth: true; model: root.deviceState.ports() }
         }
-        RowLayout {
-            Layout.fillWidth: true; uniformCellSizes: true
-            Button { Layout.fillWidth: true; text: qsTr("连接"); onClicked: root.deviceState.open(serial.currentText) }
-            Button { Layout.fillWidth: true; text: qsTr("断开"); onClicked: root.deviceState.close() }
+        DoubleButtonRow {
+            firstAction: Action { text: qsTr("连接"); onTriggered: root.deviceState.open(serial.currentText) }
+            secondAction: Action { text: qsTr("断开"); onTriggered: root.deviceState.close() }
         }
     }
 }
