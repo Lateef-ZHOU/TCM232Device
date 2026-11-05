@@ -153,9 +153,7 @@ ModulePage {
             Layout.fillWidth: true
             text: qsTr("设为开机默认")
             onClicked: root.deviceState.saveParameter(editor.module, editor.command)
-            ToolTip {
-                delay: 400
-                timeout: -1
+            FormToolTip {
                 visible: saveDefault.hovered
                 text: qsTr("将设备当前值写入非易失存储，设备重启后恢复此值。")
             }
@@ -193,9 +191,7 @@ ModulePage {
                 text: root.switchText(Tcm232Protocol.TCOE)
             }
         }
-        MenuSeparator {
-            Layout.fillWidth: true
-        }
+        FormSeparator {}
         ReadoutRow {
             Temperature {
                 key: "tc"

@@ -74,3 +74,9 @@ ctest --test-dir build -C Release --output-on-failure
 验证：Windows Release增量构建、serial_delivery 1/1、主程序四窗口装配及八秒冒烟通过；截图核查三列对齐和按钮显示。未连接实物、未推送。
 
 2026-11-05 输出开关按钮改为上下排列：复用ReadoutField自带纵向内容区，开启在上、关闭在下，均占满该列。命令与回报不变；Release增量构建、serial_delivery 1/1及主程序八秒装配冒烟通过，未推送。
+
+## 表单分隔与提示统一（2026-11-05 用户定）
+
+温控横线使用 UICore FormSeparator，开机默认提示使用 FormToolTip；原提示文字、按钮上下排布、组间距、查询与整轮绘图保持。
+
+验证：Windows 主程序 Release 增量构建、四窗装配和八秒桌面冒烟通过，运行 stderr 为空；UICore CTest 3/3通过。未连接硬件，未推送。
