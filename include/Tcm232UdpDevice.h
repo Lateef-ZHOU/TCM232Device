@@ -20,7 +20,7 @@ class Tcm232UdpDevice final
     using Base = Tcm232DeviceT<PcapHandle>;
 public:
     static Tcm232UdpDevice *qmlAttachedProperties(QObject *owner) { return new Tcm232UdpDevice(owner); }
-    explicit Tcm232UdpDevice(QObject *parent) : Base(QStringLiteral("网口 · UDP · TCM232"), parent)
+    explicit Tcm232UdpDevice(QObject *parent) : Base(QStringLiteral("TCM232"), parent)
     { static_assert(FinalDevice<Tcm232UdpDevice, decltype(&Tcm232UdpDevice::PreDestruction)>); }
     ~Tcm232UdpDevice() override { PreDestruction(); }
     [[nodiscard]] QVariantMap connectionParameters() const

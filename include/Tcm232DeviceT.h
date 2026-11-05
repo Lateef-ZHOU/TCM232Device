@@ -9,7 +9,7 @@ class Tcm232DeviceT : public Device<Transport>
 {
 protected:
     Tcm232DeviceT(QString subtitle, QObject *parent)
-        : Device<Transport>(QStringLiteral("温控器"), std::move(subtitle), parent)
+        : Device<Transport>(QStringLiteral("温控·业贤"), std::move(subtitle), parent)
     { qRegisterMetaType<RxTime>("RxTime"); }
     virtual void packetReceived(RxTime at, const Tcm232::Packet &packet) = 0;
 

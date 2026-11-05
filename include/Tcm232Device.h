@@ -20,7 +20,7 @@ class Tcm232Device final
 public:
     static Tcm232Device *qmlAttachedProperties(QObject *owner) { return new Tcm232Device(owner); }
     explicit Tcm232Device(QObject *parent)
-        : Base(QStringLiteral("串口 · TCM232"), parent)
+        : Base(QStringLiteral("TCM232"), parent)
     {
         static_assert(FinalDevice<Tcm232Device, decltype(&Tcm232Device::PreDestruction)>);
     }
