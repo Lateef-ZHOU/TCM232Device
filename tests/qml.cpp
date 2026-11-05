@@ -9,6 +9,7 @@
 #include <QJSValue>
 #include <QtQml/qqmlextensionplugin.h>
 #include <memory>
+#include <algorithm>
 #include <vector>
 
 Q_IMPORT_QML_PLUGIN(Tcm232TypesPlugin)
@@ -29,14 +30,60 @@ public:
     }
 };
 
+// 页面验证只观察提交边界；真实串口节奏在 serial_delivery 中单独验证。
+class PageDeviceProbe final : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString displayName READ displayName CONSTANT)
+    Q_PROPERTY(QString subtitle READ subtitle CONSTANT)
+    Q_PROPERTY(bool isOpen READ isOpen)
+public:
+    std::vector<QByteArray> commands;
+    bool connected = false;
+    QString displayName() const { return QStringLiteral("温控器"); }
+    QString subtitle() const { return QStringLiteral("测试"); }
+    bool isOpen() const { return connected; }
+    Q_INVOKABLE bool query(Tcm232::Module module, Tcm232::Command command)
+    { return record({{}, module, command, QVariant::fromValue(Tcm232::ValueType::Query)}); }
+    Q_INVOKABLE bool setParameter(Tcm232::Module module, Tcm232::Command command, QVariant value)
+    { return record({{}, module, command, value}); }
+    Q_INVOKABLE bool saveParameter(Tcm232::Module module, Tcm232::Command command)
+    { return record({{}, module, command, QVariant::fromValue(Tcm232::ValueType::Save)}); }
+    void open() { connected = true; Q_EMIT connectionChanged(HandleCore::ResourcePhase::Acquired); }
+    void close()
+    {
+        Q_EMIT connectionChanged(HandleCore::ResourcePhase::AboutToRelease);
+        connected = false;
+        Q_EMIT connectionChanged(HandleCore::ResourcePhase::Released);
+    }
+Q_SIGNALS:
+    void connectionChanged(HandleCore::ResourcePhase phase);
+    void packetReceived(RxTime at, const Tcm232::Packet &packet);
+    void logMessage(const QString &text);
+private:
+    bool record(const Tcm232::Packet &packet)
+    {
+        if (!connected) return false;
+        commands.push_back(Tcm232::Protocol::pack(packet));
+        return true;
+    }
+};
+
 static void verifyPage(QQmlEngine &engine)
 {
-    FakeSerialPort::reset();
-    QQmlComponent component(&engine, "Lidar.Tcm232", "Tcm232Module");
-    std::unique_ptr<QObject> page(component.create());
+    PageDeviceProbe device;
+    QQmlComponent component(&engine);
+    component.setData(R"(
+        import QtQuick
+        import Lidar.UI
+        import Lidar.Tcm232
+        Tcm232Page {
+            required property QtObject backend
+            deviceState: backend
+            connection: Section { title: "测试连接" }
+        })", QUrl());
+    std::unique_ptr<QObject> page(component.createWithInitialProperties({{"backend", QVariant::fromValue(&device)}}));
     if (!page) qFatal("%s", qPrintable(component.errorString()));
-    auto *device = page->property("deviceState").value<Tcm232::Tcm232Device *>();
-    if (!device || device->parent() != page.get() || device->isOpen()) qFatal("page ownership");
     auto control = [&](const char *name) {
         auto *item = page->findChild<QObject *>(QString::fromLatin1(name));
         if (!item) qFatal("missing control %s", name);
@@ -51,34 +98,43 @@ static void verifyPage(QQmlEngine &engine)
         }
         if (!predicate()) qFatal("timed out waiting for page");
     };
-    if (!device->open(QStringLiteral("controlled"))) qFatal("open");
     const std::vector<QByteArray> round{
-        "TC1:TCADJTEMP?\r", "TC1:TCACTTEMP?\r", "TC1:TCSW?\r", "TC1:TCOE?\r", "TC1:TCACTVOL?\r",
-        "TC1:TCACTCUR?\r", "TC1:TCERRORSTATUS?\r", "FAN1:FANSTARTTEMP?\r", "FAN1:FANACTTEMP?\r", "FAN1:FANSPEED?\r"};
-    QElapsedTimer gap;
-    auto next = [&](const QByteArray &expected) {
-        const auto before = FakeSerialPort::writes().size();
-        wait([&] { return FakeSerialPort::writes().size() > before; });
-        const auto bytes = FakeSerialPort::writes();
-        if (bytes.size() != before + 1 || bytes.back() != expected)
-            qFatal("expected one serial command %s, got %s", expected.constData(), bytes.back().constData());
-        if (gap.isValid() && gap.elapsed() < 55) qFatal("commands not spaced apart");
-        gap.start();
+        "TC1:TCADJTEMP?", "TC1:TCACTTEMP?", "TC1:TCSW?", "TC1:TCOE?", "TC1:TCACTVOL?",
+        "TC1:TCACTCUR?", "TC1:TCERRORSTATUS?", "FAN1:FANSTARTTEMP?", "FAN1:FANACTTEMP?", "FAN1:FANSPEED?"};
+    auto checkRound = [&](size_t start) {
+        if (device.commands.size() != start + round.size()
+            || !std::equal(round.begin(), round.end(), device.commands.begin() + start))
+            qFatal("query collection was not submitted together");
     };
-    next("SYSTEM:SYSMODEL?\r");
-    next("SYSTEM:SYSSN?\r");
-    FakeSerialPort::enqueue("SYSTEM:SYSSN=232-TEST\r");
-    next(round[0]);
+    QElapsedTimer tick;
+    tick.start();
+    device.open();
+    if (device.commands[0] != "SYSTEM:SYSMODEL?" || device.commands[1] != "SYSTEM:SYSSN?") qFatal("identity query");
+    checkRound(2);
     auto *tc = control("tcDraft");
     auto *fan = control("fanDraft");
     tc->setProperty("text", "32.5");
     fan->setProperty("text", "40");
-    FakeSerialPort::enqueue("TC1:TCADJTEMP=18\rFAN1:FANSTARTTEMP=31\rTC1:TCSW=1\rTC1:TCOE=0\r"
-                            "TC1:TCACTVOL=4.5\rTC1:TCACTCUR=0.6\rTC1:TCACTTEMP=22\r"
-                            "FAN1:FANACTTEMP=27\rFAN1:FANSPEED=800\rTC2:TCADJTEMP=99\r"
-                            "CMD:REPLY=4\rTC1:TCERRORSTATUS=254\r");
-    wait([&] { return control("errors")->property("text").toString() == QStringLiteral("外部错误"); });
     using C = Tcm232::Command;
+    using M = Tcm232::Module;
+    auto reply = [&](M module, C command, QVariant value, int at = 2000000000) {
+        Q_EMIT device.packetReceived(RxTime(std::chrono::seconds(at)), {{}, module, command, value});
+    };
+    reply(M::SYSTEM, C::SYSMODEL, QStringLiteral("TCM232"));
+    reply(M::SYSTEM, C::SYSSN, QStringLiteral("232-TEST"));
+    reply(M::TC1, C::TCADJTEMP, 18.0);
+    reply(M::FAN1, C::FANSTARTTEMP, 31.0);
+    reply(M::TC1, C::TCSW, 1);
+    reply(M::TC1, C::TCOE, 0);
+    reply(M::TC1, C::TCACTVOL, 4.5);
+    reply(M::TC1, C::TCACTCUR, 0.6);
+    reply(M::TC1, C::TCACTTEMP, 22.0);
+    reply(M::FAN1, C::FANACTTEMP, 27.0);
+    reply(M::FAN1, C::FANSPEED, 800);
+    reply(M::TC2, C::TCADJTEMP, 99.0);
+    reply(M::CMD, C::REPLY, 4);
+    reply(M::TC1, C::TCERRORSTATUS, 254);
+    if (control("errors")->property("text") != QStringLiteral("外部错误")) qFatal("error report");
     auto report = [&](C command) {
         return page->property("reports").value<QJSValue>().property(QString::number(int(command))).toNumber();
     };
@@ -91,66 +147,52 @@ static void verifyPage(QQmlEngine &engine)
     if (pages.count() != 1 || sections.count() != 3
         || sections.at(1)->property("title") != QStringLiteral("温控1")
         || sections.at(2)->property("title") != QStringLiteral("风扇1")) qFatal("wrong page layout");
-    auto *initial = pages.at(0)->findChild<LaserTelemetryItem *>("temperatures");
-    initial->applyHover(1e12);
-    if (initial->hover()) qFatal("partial round plotted");
-    for (size_t i=1; i<round.size(); ++i) next(round[i]);
-    next("SYSTEM:SYSMODEL?\r");
-    FakeSerialPort::enqueue("SYSTEM:SYSMODEL=TCM232\r");
-    next(round[0]);
-    auto panel = [&](const char *name, const QStringList &keys) {
-        auto *item = pages.at(0)->findChild<LaserTelemetryItem *>(name);
-        if (!item || item->channelKeys() != keys) qFatal("wrong chart channels");
-        item->applyHover(1e12);
-        if (!item->hover()) qFatal("missing chart measurement");
-        return item;
-    };
-    auto *temps = panel("temperatures", {"tcTemperature", "fanTemperature"});
-    auto *volts = panel("voltage", {"outputVoltage"});
-    auto *amps = panel("currents", {"outputCurrent"});
-    if (!temps->hover()->text.contains(QStringLiteral("温控1实际温度  22.00"))
-        || !temps->hover()->text.contains(QStringLiteral("风扇1实际温度  27.00"))
-        || !volts->hover()->text.contains(QStringLiteral("实际输出电压  4.50 V"))
-        || !amps->hover()->text.contains(QStringLiteral("实际输出电流  0.60 A")))
-        qFatal("wrong legend or value");
-    const auto lastSample = temps->hover()->at;
-    Q_EMIT device->packetReceived(RxTime(std::chrono::seconds(2000000000)), {{}, Tcm232::Module::FAN1, C::FANSPEED, 888});
+    auto *temps = pages.at(0)->findChild<LaserTelemetryItem *>("temperatures");
+    auto *volts = pages.at(0)->findChild<LaserTelemetryItem *>("voltage");
+    auto *amps = pages.at(0)->findChild<LaserTelemetryItem *>("currents");
+    if (!temps || !volts || !amps || temps->channelKeys() != QStringList{"tcTemperature", "fanTemperature"}
+        || volts->channelKeys() != QStringList{"outputVoltage"} || amps->channelKeys() != QStringList{"outputCurrent"})
+        qFatal("chart channels");
     temps->applyHover(1e12);
-    if (temps->hover()->at != lastSample) qFatal("RPM added a chart sample");
-    Q_EMIT device->packetReceived(RxTime(std::chrono::seconds(2000000001)), {{}, Tcm232::Module::TC1, C::TCACTTEMP, 22.0});
-    temps->applyHover(1e12);
-    if (temps->hover()->at != lastSample) qFatal("early chart update");
-    for (size_t i=1; i<round.size(); ++i) next(round[i]);
-    next(round[0]);
-    for (auto *item : {temps, volts, amps}) {
-        item->applyHover(1e12);
-        if (item->hover()->at != 2000000001) qFatal("steady reading did not advance all plots together");
-    }
+    if (temps->hover()) qFatal("partial round plotted");
     auto click = [&](const char *name) {
         if (!QMetaObject::invokeMethod(control(name), "clicked")) qFatal("click failed");
     };
-    const auto before = FakeSerialPort::writes().size();
-    click("tcSet");
-    click("tcSave");
-    click("fanSet");
-    click("fanSave");
-    click("outputOn");
+    click("tcSet"); click("tcSave"); click("fanSet"); click("fanSave"); click("outputOn");
     tc->setProperty("text", "99");
-    if (FakeSerialPort::writes().size() != before) qFatal("button bypassed timer");
-    next("TC1:TCADJTEMP=32.5\r");
-    next("TC1:TCADJTEMP!\r");
-    next("FAN1:FANSTARTTEMP=40\r");
-    next("FAN1:FANSTARTTEMP!\r");
-    next("TC1:TCSW=1\r");
-    next(round[1]); // 无设后回查，也不重启当前轮。
-    click("outputOn");
-    device->close();
-    wait([&] { return control("errors")->property("text").toString() == QStringLiteral("—"); });
+    const std::vector<QByteArray> manual{"TC1:TCADJTEMP=32.5", "TC1:TCADJTEMP!", "FAN1:FANSTARTTEMP=40", "FAN1:FANSTARTTEMP!", "TC1:TCSW=1"};
+    if (device.commands.size() != 17 || !std::equal(manual.begin(), manual.end(), device.commands.begin() + 12))
+        qFatal("manual commands waited for polling or changed order");
+    wait([&] { return device.commands.size() > 17; });
+    if (tick.elapsed() < 900) qFatal("polling still uses per-command cadence");
+    checkRound(17); // 手动命令不改变查询集合，也没有设定后额外回查。
+    for (auto *item : {temps, volts, amps}) item->applyHover(1e12);
+    if (!temps->hover() || !volts->hover() || !amps->hover()
+        || !temps->hover()->text.contains(QStringLiteral("温控1实际温度  22.00"))
+        || !temps->hover()->text.contains(QStringLiteral("风扇1实际温度  27.00"))
+        || !volts->hover()->text.contains(QStringLiteral("实际输出电压  4.50 V"))
+        || !amps->hover()->text.contains(QStringLiteral("实际输出电流  0.60 A"))) qFatal("snapshot values");
+    const auto lastSample = temps->hover()->at;
+    reply(M::FAN1, C::FANSPEED, 888, 2000000001);
+    reply(M::TC1, C::TCACTTEMP, 22.0, 2000000001);
+    temps->applyHover(1e12);
+    if (temps->hover()->at != lastSample) qFatal("early chart update");
+    wait([&] { return device.commands.size() > 27; });
+    checkRound(27);
+    for (auto *item : {temps, volts, amps}) {
+        item->applyHover(1e12);
+        if (item->hover()->at != 2000000001) qFatal("plots did not advance together");
+    }
+    device.close();
+    if (control("errors")->property("text") != QStringLiteral("—")) qFatal("close did not clear state");
+    const auto before = device.commands.size();
     click("tcSave");
-    if (!device->open(QStringLiteral("controlled"))) qFatal("reopen");
-    gap.invalidate();
-    next("SYSTEM:SYSMODEL?\r"); // 关闭前和离线时点击的命令均不在新连接中重放。
-    device->close();
+    QElapsedTimer stopped; stopped.start();
+    while (stopped.elapsed() < 1100) { QCoreApplication::processEvents(); QThread::msleep(1); }
+    if (device.commands.size() != before) qFatal("poll continued while closed");
+    device.open();
+    checkRound(before + 2); // 离线手动操作不在新连接重放。
+    device.close();
 }
 
 void verifyQml()
