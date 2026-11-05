@@ -222,13 +222,10 @@ ModulePage {
         MenuSeparator {
             Layout.fillWidth: true
         }
-        FieldRow {
-            label: qsTr("错误状态")
-            FormLabel {
-                objectName: "errors"
-                multiline: true
-                text: root.errorText()
-            }
+        Readout {
+            objectName: "errors"
+            caption: qsTr("错误状态")
+            text: root.errorText()
         }
     }
     readonly property Section fanSection: Section {
