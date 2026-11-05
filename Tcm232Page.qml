@@ -195,10 +195,7 @@ ModulePage {
         MenuSeparator {
             Layout.fillWidth: true
         }
-        RowLayout {
-            Layout.fillWidth: true
-            uniformCellSizes: true
-            spacing: FormStyle.columnSpacing
+        ReadoutRow {
             Temperature {
                 key: "tc"
                 caption: qsTr("调节温度")
