@@ -121,20 +121,12 @@ ModulePage {
                 root.accept(at, packet);
         }
     }
-    component Temperature: ColumnLayout {
+    component Temperature: ReadoutField {
         id: editor
         required property int module
         required property int command
-        required property string caption
         required property string key
-        Layout.fillWidth: true
-        Layout.preferredWidth: FormStyle.fieldColumnWidth
-        Layout.alignment: Qt.AlignTop
-        spacing: FormStyle.rowSpacing
-        Readout {
-            caption: editor.caption
-            text: root.valueText(editor.command, "°C")
-        }
+        text: root.valueText(editor.command, "°C")
         ValueField {
             id: draft
             objectName: editor.key + "Draft"
@@ -145,20 +137,27 @@ ModulePage {
                 notation: DoubleValidator.StandardNotation
                 locale: "C"
             }
-            onCommitted: v => value = v
-        }
-        DoubleButtonRow {
-            secondToolTip: qsTr("保存设备当前值")
-            firstAction: Action {
-                objectName: editor.key + "Set"
-                text: qsTr("设定")
-                enabled: draft.acceptableInput && draft.text.length > 0
-                onTriggered: root.deviceState.setParameter(editor.module, editor.command, Number(draft.text))
+            onCommitted: function (v) {
+                if (!draft.acceptableInput || String(v).trim().length === 0)
+                    return;
+                const next = Number(v);
+                if (draft.value !== "" && Number(draft.value) === next)
+                    return;
+                draft.value = v;
+                root.deviceState.setParameter(editor.module, editor.command, next);
             }
-            secondAction: Action {
-                objectName: editor.key + "Save"
-                text: qsTr("保存")
-                onTriggered: root.deviceState.saveParameter(editor.module, editor.command)
+        }
+        Button {
+            id: saveDefault
+            objectName: editor.key + "Save"
+            Layout.fillWidth: true
+            text: qsTr("设为开机默认")
+            onClicked: root.deviceState.saveParameter(editor.module, editor.command)
+            ToolTip {
+                delay: 400
+                timeout: -1
+                visible: saveDefault.hovered
+                text: qsTr("将设备当前值写入非易失存储，设备重启后恢复此值。")
             }
         }
     }
@@ -166,13 +165,15 @@ ModulePage {
     sections: [connection, tcSection, fanSection]
     readonly property Section tcSection: Section {
         title: qsTr("温控1")
-        InfoRow {
-            caption: qsTr("型号")
-            text: root.valueText(Tcm232Protocol.SYSMODEL, "")
-        }
-        InfoRow {
-            caption: qsTr("SN")
-            text: root.valueText(Tcm232Protocol.SYSSN, "")
+        ReadoutRow {
+            Readout {
+                caption: qsTr("型号")
+                text: root.valueText(Tcm232Protocol.SYSMODEL, "")
+            }
+            Readout {
+                caption: qsTr("SN")
+                text: root.valueText(Tcm232Protocol.SYSSN, "")
+            }
         }
         ReadoutRow {
             Readout {
@@ -202,15 +203,9 @@ ModulePage {
                 module: Tcm232Protocol.TC1
                 command: Tcm232Protocol.TCADJTEMP
             }
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignTop
-                Layout.preferredWidth: FormStyle.fieldColumnWidth
-                spacing: FormStyle.rowSpacing
-                Readout {
-                    caption: qsTr("输出开关")
-                    text: root.switchText(Tcm232Protocol.TCSW)
-                }
+            ReadoutField {
+                caption: qsTr("输出开关")
+                text: root.switchText(Tcm232Protocol.TCSW)
                 DoubleButtonRow {
                     firstAction: Action {
                         objectName: "outputOn"

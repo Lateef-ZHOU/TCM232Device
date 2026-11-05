@@ -156,13 +156,31 @@ static void verifyPage(QQmlEngine &engine)
     temps->applyHover(1e12);
     if (temps->hover()) qFatal("partial round plotted");
     auto click = [&](const char *name) {
-        if (!QMetaObject::invokeMethod(control(name), "clicked")) qFatal("click failed");
+        auto *button = control(name);
+        auto *action = qvariant_cast<QObject *>(button->property("action"));
+        const bool invoked = action
+            ? QMetaObject::invokeMethod(action, "trigger", Q_ARG(QObject *, button))
+            : QMetaObject::invokeMethod(button, "clicked");
+        if (!invoked) qFatal("click failed");
     };
-    click("tcSet"); click("tcSave"); click("fanSet"); click("fanSave"); click("outputOn");
+    auto finish = [&](QObject *field) {
+        if (!QMetaObject::invokeMethod(field, "editingFinished")) qFatal("edit finish failed");
+    };
+    if (device.commands.size() != 12) qFatal("draft or report sent a setting");
+    finish(tc);
+    finish(tc); // 同值完成不重复设定。
+    if (report(C::TCADJTEMP) != 18) qFatal("setting overwrote device report");
+    click("tcSave");
+    finish(fan);
+    click("fanSave"); click("outputOn");
+    if (control("tcSave")->property("text") != QStringLiteral("设为开机默认")) qFatal("persistent action label");
     tc->setProperty("text", "99");
     const std::vector<QByteArray> manual{"TC1:TCADJTEMP=32.5", "TC1:TCADJTEMP!", "FAN1:FANSTARTTEMP=40", "FAN1:FANSTARTTEMP!", "TC1:TCSW=1"};
     if (device.commands.size() != 17 || !std::equal(manual.begin(), manual.end(), device.commands.begin() + 12))
+    {
+        for (const auto &command : device.commands) qWarning() << command;
         qFatal("manual commands waited for polling or changed order");
+    }
     wait([&] { return device.commands.size() > 17; });
     if (tick.elapsed() < 900) qFatal("polling still uses per-command cadence");
     checkRound(17); // 手动命令不改变查询集合，也没有设定后额外回查。
