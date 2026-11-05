@@ -166,17 +166,13 @@ ModulePage {
     sections: [connection, tcSection, fanSection]
     readonly property Section tcSection: Section {
         title: qsTr("温控1")
-        FieldRow {
-            label: qsTr("型号")
-            FormLabel {
-                text: root.valueText(Tcm232Protocol.SYSMODEL, "")
-            }
+        InfoRow {
+            caption: qsTr("型号")
+            text: root.valueText(Tcm232Protocol.SYSMODEL, "")
         }
-        FieldRow {
-            label: qsTr("SN")
-            FormLabel {
-                text: root.valueText(Tcm232Protocol.SYSSN, "")
-            }
+        InfoRow {
+            caption: qsTr("SN")
+            text: root.valueText(Tcm232Protocol.SYSSN, "")
         }
         ReadoutRow {
             Readout {

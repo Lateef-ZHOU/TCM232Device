@@ -42,3 +42,8 @@ ctest --test-dir build -C Release --output-on-failure
 2026-11-05 冷却调整（用户定）：串口写入后的冷却从 100 ms 缩短为 75 ms，QML 仍每秒提交十项查询，手动命令独立提交。首条立即、尾条冷却、断开和重连清队列的机制保持。上述 100 ms 验证是调整前记录。Windows 完整专项 1/1（5.39 秒）、Linux 串口专项 1/1、Bridge 4/4，以及板上 ARM64 模拟转发与 DMA 验证通过。新日志为 build/{build,test}-paced75.log，部署和连续查询证据见 BridgeCore/VALIDATION.md。
 
 2026-11-05 表单统一（用户定）：温控及风扇读数接入 Readout，设定/保存与开/关接入 DoubleButtonRow，保存提示保留。型号及 SN 使用 FormLabel。输入草稿、查询轮次、缓存及整轮绘图不变。 公共视觉规格由 UICore 提供，不增加业务状态。Windows 主程序增量构建、八秒离屏冒烟通过；固定依赖在本地更新，暂不推送。
+
+
+### 2026-11-05 公共视觉与连接布局
+
+串口与网口连接区使用 UICore ConnectionSection，型号/SN 使用 InfoRow；查询轮次、暂存值、整轮绘图和 75 ms 发送间隔不变。 本轮仅本地整理，未推送；Windows 集成验证记录见主程序维护操作。
