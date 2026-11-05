@@ -6,7 +6,7 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 设备后端目标 `Lidar::Tcm232Device` 提供 final 类 `Tcm232::Tcm232Device`，通过 `Tcm232DeviceT<Transport>` 与网口后端共用同一套报文封装与解析。连接和锁都属于这个对象；末端析构先关停收包。桥接器只需串口层，可配置 `-DTCM232_WITH_DEVICE=OFF`。
 
-串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；串口 Handle 不限速，页面将轮询和手动操作统一按 100 ms 定时发送。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
+串口 Handle 的发送入口接受一条命令主体。厂家协议 §4.6 规定相邻命令间隔大于 50 ms；串口 Handle 的 onTX 校验并补 CR 后排队，返回 Queued 表示接受；实际发送失败由 connSend 记录。首条立即发送，每次写入返回后以单次精确定时器冷却 100 ms；末条发完也保留冷却，期间的新命令等待，不重复封帧。定时器到点且队列为空则自然停止。AboutToRelease 同步清队列并停表，Released 在所属线程清除自动断线时的待发送项，不跨连接重放。队列和定时器仅在所属主线程使用。页面的 100 ms 定时器只负责查询轮次和手动命令优先顺序，不再承担实际串口间隔保证。协议入口 `Protocol::parse(body)` 一次返回 `Packet{address, module, command, value}` 或具体错误。传入已去掉 CR 和校验的主体，返回对象自持。缺省地址为 `std::nullopt`，显式 `@0` 为有效地址。接着根据模块名、操作符和命令名识别报文；模块和命令文本用独立哈希索引查找。命令覆盖型号表 157 个不同参数名、随包 TCM232 型号文件补充的 5 个参数和通用应答 REPLY。模块和命令仍可自由组合，未登记的名称返回错误。
 
 `=` 根据命令登记的类型生成 QVariant。NUM 为有限 double，普通 OPT 和 BINARYCODE 为整数，REPLY 为 0～8 的整数，其余以 QString 保存（包括空串及前导零）。转换失败返回解析错误。`?` 和 `!` 由同一个 ValueType 枚举的 Query、Save 值表示，使用 QVariant::fromValue 存入；先辨元类型，再读枚举值，空字符串赋值仍是 QString。设备通过 `packetReceived(RxTime at, const Tcm232::Packet &packet)` 从收包线程直接上传每条有效回报。方向异常的查询、保存及解析错误记录日志；合法的设备错误应答同样上传。
 
@@ -25,6 +25,10 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 测试覆盖半帧、多帧同读、残留半帧、空行、超长恢复，以及生产 Handle 经过模拟串口的收发边界，无需连接实物。
+
+2026-11-05：补充首条立即发送、相邻写入不少于 100 ms、末条冷却期间重新入队、冷却结束后立即发送、断开/重连清队列、未连接拒收、短写/错误日志及析构后不发送的验证。Windows Qt 6.11.2/MSVC Release 与 CTest 1/1 通过（包含设备和 QML 测试）；Linux Qt 6.8.3/GCC 串口专项 1/1 通过。Bridge 集成以突发 UDP 输入验证实际串口节奏，Linux 和 ARM64 均通过。
+
+板端已部署此 Handle：Windows 一次突发发送 12 条只读查询，型号、SN 和 10 项状态全部返回，回报间隔约 100 ms（接收时间含网络抖动，不作为串口写入精确间隔）。未下发设定、保存或输出开关命令。部署与备份记录见相邻 BridgeCore/VALIDATION.md。本轮仅本地提交，尚未推送；独立构建本地版本需同时指定 `FETCHCONTENT_SOURCE_DIR_LIDAR_HANDLE_CORE` 为相邻 HandleCore 源码目录。
 
 启用 QML 时，测试用 QQmlEngine 的 Connections 接收生产信号并按枚举分流，在主线程逐包核对原始 RxTime、地址和值。
 

@@ -103,6 +103,7 @@ ModulePage {
         const names = ["外部错误", "过压", "过流", "过温", "温度传感器开路", "负载短路", "负载开路"]
         return names.filter((name, bit) => !(bits & (1 << bit))).join("、") || "正常"
     }
+    // 页面安排查询轮次；实际串口发送间隔由温控 Handle 保证。
     Timer { id: poll; interval: 100; repeat: true; onTriggered: root.sendNext() }
     Connections {
         target: root.deviceState as QtObject

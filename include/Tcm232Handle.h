@@ -1,5 +1,8 @@
 #pragma once
 #include <memory>
+#include <deque>
+#include <utility>
+#include <QTimer>
 #include "Tcm232Protocol.h"
 #include <SerialHandle.h>
 
@@ -45,6 +48,20 @@ class Handle : public SerialHandle<Framer>
 {
     Q_OBJECT
 public:
+    Handle()
+    {
+        transmit_.setSingleShot(true);
+        transmit_.setTimerType(Qt::PreciseTimer);
+        transmit_.setInterval(100);
+        QObject::connect(&transmit_, &QTimer::timeout, this, [this] { sendNext(); });
+        QObject::connect(this, &Handle::connectionChanged, this, [this](HandleCore::ResourcePhase phase) {
+            if (phase == HandleCore::ResourcePhase::AboutToRelease || phase == HandleCore::ResourcePhase::Released) {
+                transmit_.stop();
+                pending_.clear();
+            }
+        });
+    }
+
     [[nodiscard]] static SerialParams parameters(const SerialPortInfo &port)
     {
         SerialParams params;
@@ -63,14 +80,35 @@ private:
         return {body, RXRuling::Decode, at};
     }
 
-    TXRuling onTX(const QByteArray &body, std::shared_ptr<SerialConn<Framer>>) const final
+    TXRuling onTX(const QByteArray &body, std::shared_ptr<SerialConn<Framer>> conn) const final
     {
         if (body.isEmpty() || body.contains('\r') || body.contains('\n'))
         {
             Q_EMIT logMessage(QStringLiteral("温控命令须为非空单行主体，未发送"));
             return {};
         }
-        return {body + '\r', TXRuling::Encode};
+        if (!conn) {
+            Q_EMIT logMessage(QStringLiteral("设备未连接，无法发送数据"));
+            return {};
+        }
+        pending_.emplace_back(std::move(conn), body + '\r');
+        if (!transmit_.isActive())
+            sendNext();
+        return {{}, TXRuling::Queued};
     }
+
+    // 仅所属主线程访问；末条发送后仍计时一次，覆盖空队列期间的新命令。
+    void sendNext() const
+    {
+        if (pending_.empty())
+            return;
+        auto [conn, frame] = std::move(pending_.front());
+        pending_.pop_front();
+        (void)connSend(std::move(conn), frame);
+        transmit_.start();
+    }
+
+    mutable QTimer transmit_{this};
+    mutable std::deque<std::pair<std::shared_ptr<SerialConn<Framer>>, QByteArray>> pending_;
 };
 }

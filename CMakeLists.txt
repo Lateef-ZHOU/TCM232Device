@@ -12,7 +12,7 @@ if(NOT TARGET Lidar::HandleCore)
     endif()
     FetchContent_Declare(lidar_handle_core
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/HandleCore.git
-        GIT_TAG 9cf50f16613a828e0f18bf42285b2e5a67e3a16d)
+        GIT_TAG 4b2479bcd1911298f28ff12f0e78f9e4774acb8c)
     FetchContent_MakeAvailable(lidar_handle_core)
 endif()
 if(NOT TARGET Lidar::Serial)
