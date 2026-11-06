@@ -16,10 +16,10 @@ TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt
 
 ## 验证
 
-配置 Qt 6 和 libserialport 的搜索路径后，在仓库根目录执行。当前单参数 Device 版本为本地提交，下例使用相邻 DeviceCore 检出：
+配置 Qt 6 和 libserialport 的搜索路径后，在仓库根目录执行。公开仓库使用 MIT 许可证，版权为 2026 周涛 (ZHOU TAO)。构建从 GitHub 拉取固定提交：
 
 ```sh
-cmake -S . -B build -DBUILD_TESTING=ON -DFETCHCONTENT_SOURCE_DIR_LIDAR_DEVICECORE="$PWD/../DeviceCore"
+cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```

@@ -53,8 +53,8 @@ if(TCM232_WITH_QML AND TCM232_WITH_DEVICE)
     endif()
     if(NOT TARGET Lidar::ChartCore)
         include(FetchContent)
-        FetchContent_Declare(lidar_chartcore GIT_REPOSITORY "${CMAKE_CURRENT_SOURCE_DIR}/../ChartCore"
-            GIT_TAG d1a256590ab0ebab63a23cb18986eed4343a1fe7)
+        FetchContent_Declare(lidar_chartcore GIT_REPOSITORY https://github.com/Lateef-ZHOU/ChartCore.git
+            GIT_TAG d69806723bfb77e362601edbeb918e3a69e34777)
         FetchContent_MakeAvailable(lidar_chartcore)
     endif()
     get_target_property(chart_dir Lidar::ChartCore QT_QML_MODULE_OUTPUT_DIRECTORY)
