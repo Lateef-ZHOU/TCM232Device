@@ -80,3 +80,9 @@ ctest --test-dir build -C Release --output-on-failure
 温控横线使用 UICore FormSeparator，开机默认提示使用 FormToolTip；原提示文字、按钮上下排布、组间距、查询与整轮绘图保持。
 
 验证：Windows 主程序 Release 增量构建、四窗装配和八秒桌面冒烟通过，运行 stderr 为空；UICore CTest 3/3通过。未连接硬件，未推送。
+
+## 编译警告级别与 qmlcache 豁免（2026-11-09 用户定）
+
+Tcm232Types 与其他官邸一致，MSVC 下开启 `/W4`，并对 `.rcc/qmlcache/` 生成文件局部豁免 C4702（Qt 头在优化阶段报，`/external:W0` 管不到）。开启后发现 Tcm232Protocol.h 一处有符号/无符号比较（C4018），改为显式转换，取值上限检查不变。
+
+验证：主程序原 build 以相邻源码覆盖做 Release 整编，零警告；本仓 build 目录 Release 构建零警告，serial_delivery 1/1（5.34 秒）。未连接实物、未推送。

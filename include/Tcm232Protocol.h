@@ -263,7 +263,7 @@ private:
         case QMetaType::UInt: case QMetaType::ULong: case QMetaType::ULongLong:
         case QMetaType::UShort: case QMetaType::UChar: {
             const auto n = value.toULongLong();
-            if (type == ValueType::Integer && n > std::numeric_limits<qlonglong>::max()) return false;
+            if (type == ValueType::Integer && n > static_cast<qulonglong>(std::numeric_limits<qlonglong>::max())) return false;
             digits = QByteArray::number(n);
             break;
         }
