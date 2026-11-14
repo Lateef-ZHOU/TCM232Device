@@ -1,3 +1,11 @@
+## 2026-11-14：vector 引用发送验证
+
+测试调用适配 const vector& 发送入口；Windows 独立构建、公开头及 CTest 1/1 通过。温控原有 75 ms 节流、首条立即、末条冷却和断开清队列验证保持。证据主程序 build/vectorsend-TCM232Device-{build,test}.log。未操作硬件、不推送。
+
+## 2026-11-14：Handle 发送接口适配
+
+协议生成的 QByteArray 在发送入口转换为自有 vector<unsigned char>；Handle 的单包和批量入口按 const 引用接收，内部 onTX 与 connSend 保留只读 span。入队处独立持有报文；发送间隔、协议和关闭行为保持。仅本地，不推送。
+
 ## 2026-11-14：onData 只读 span 验证
 
 上传/测试替身适配 span；只在现有 Qt 解析或断言边界借用适配。Windows 独立构建、公开头和 CTest 1/1 通过；日志在主程序 build/ondata-TCM232Device-{build,test}.log。仅本地，不推送，无真实硬件操作。

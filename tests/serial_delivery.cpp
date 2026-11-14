@@ -4,10 +4,11 @@
 #include <Tcm232Handle.h>
 #include "FakeSerialPort.h"
 
-// 仅供同步发送表达式借用；返回视图不保活参数，不能跨语句保存。
-static std::span<const unsigned char> sendBytes(const QByteArray &bytes)
+// 将既有 Qt 测试命令转换为自有字节。
+static std::vector<unsigned char> sendBytes(const QByteArray &bytes)
 {
-    return {reinterpret_cast<const unsigned char *>(bytes.constData()), static_cast<std::size_t>(bytes.size())};
+    return {reinterpret_cast<const unsigned char *>(bytes.constData()),
+            reinterpret_cast<const unsigned char *>(bytes.constData()) + bytes.size()};
 }
 
 #ifdef TEST_TCM232_QML
@@ -146,10 +147,10 @@ int main(int argc, char **argv)
     {
         std::array<QByteArray, 2> bodies{P::pack({{}, M::TC1, C::TCACTTEMP, query}),
                                        P::pack({0, M::TC2, C::TCADJTEMP, save})};
-        const std::array views{sendBytes(bodies[0]), sendBytes(bodies[1])};
-        require(handle.send(views), "batch enqueue failed");
+        const std::vector<std::vector<unsigned char>> commands{sendBytes(bodies[0]), sendBytes(bodies[1])};
+        require(handle.send(commands), "batch enqueue failed");
         for (auto &body : bodies) body.fill('x');
-    } // 排队的第二条不得借用已销毁的描述符或输入。
+    } // 排队的第二条不得借用已销毁的命令数组。
     require(!handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\r"))) && !handle.send(sendBytes(QByteArray())), "invalid body sent");
     require(FakeSerialPort::writes().size() == 1, "first immediate, second must queue");
     require(waitFor([] { return FakeSerialPort::writes().size() == 2; }), "queued command not sent");

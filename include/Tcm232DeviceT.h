@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include <DeviceBase.h>
 #include "Tcm232Protocol.h"
 
@@ -22,20 +23,20 @@ public:
     bool query(Tcm232::Module module, Tcm232::Command command)
     {
         const auto body = Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Query)});
-        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
-                              static_cast<std::size_t>(body.size())});
+        return Transport::send(std::vector<unsigned char>{reinterpret_cast<const unsigned char *>(body.constData()),
+                              reinterpret_cast<const unsigned char *>(body.constData()) + body.size()});
     }
     bool setParameter(Tcm232::Module module, Tcm232::Command command, const QVariant &value)
     {
         const auto body = Protocol::pack({{}, module, command, value});
-        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
-                              static_cast<std::size_t>(body.size())});
+        return Transport::send(std::vector<unsigned char>{reinterpret_cast<const unsigned char *>(body.constData()),
+                              reinterpret_cast<const unsigned char *>(body.constData()) + body.size()});
     }
     bool saveParameter(Tcm232::Module module, Tcm232::Command command)
     {
         const auto body = Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Save)});
-        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
-                              static_cast<std::size_t>(body.size())});
+        return Transport::send(std::vector<unsigned char>{reinterpret_cast<const unsigned char *>(body.constData()),
+                              reinterpret_cast<const unsigned char *>(body.constData()) + body.size()});
     }
 
 private:
