@@ -42,7 +42,7 @@ private:
     void onData(const QByteArray &body, RxTime at) override
     {
         require(at != RxTime{}, "missing receive time");
-        received.push_back(body);
+        received.emplace_back(body.constData(), body.size());
         available.release();
     }
 };

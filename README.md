@@ -1,3 +1,9 @@
+## 2026-11-14：只读 span 接收裁决（用户定）
+
+2026-11-14 接收裁决适配：onRX 返回 `std::span<const unsigned char>` 借用接收数据，onData 同步接收零拷贝 QByteArray 视图。留存或异步投递前必须复制取得字节所有权，不能仅浅拷贝视图。协议、重连和关闭逻辑不变；与本地 HandleCore 同批使用，尚未推送。
+
+Windows/MSVC：build-rxspan 后端/串口构建及 serial_delivery 1/1 通过，75 ms 节流与关闭清队列保持。验证日志为相应构建目录下 rxspan-build.log / rxspan-test.log（Linux 使用上述命名）。
+
 # TCM232Device
 
 TCM232 独立设备官邸的串口层，目标 `Lidar::Tcm232Serial`。基于 Qt Core、HandleCore 的 Serial 可选模块和 libserialport。使用方继承 `Tcm232::Handle` 实现收包钩子 `onData`，末端析构先同步 `close()`。

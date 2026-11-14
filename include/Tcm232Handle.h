@@ -77,7 +77,8 @@ Q_SIGNALS:
 private:
     RXRuling onRX(const QByteArray &body, RxTime at, std::shared_ptr<SerialConn<Framer>>) final
     {
-        return {body, RXRuling::Decode, at};
+        return {{reinterpret_cast<const unsigned char *>(body.constData()),
+                 static_cast<std::size_t>(body.size())}, RXRuling::Decode, at};
     }
 
     TXRuling onTX(const QByteArray &body, std::shared_ptr<SerialConn<Framer>> conn) const final
