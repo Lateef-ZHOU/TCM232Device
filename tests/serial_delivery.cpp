@@ -86,7 +86,7 @@ int main(int argc, char **argv)
             && params.parity == SP_PARITY_NONE && params.stopBits == StopBits::One
             && params.flowControl == SP_FLOWCONTROL_NONE, "serial settings");
 
-    SerialRxProbe<Tcm232::Handle> receiver;
+    SerialRxProbe<Tcm232::Handle, 1> receiver;
     std::vector<QByteArray> bodies;
     const RxTime t1 = std::chrono::system_clock::now();
     const RxTime t2 = t1 + std::chrono::seconds(1);

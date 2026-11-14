@@ -12,7 +12,8 @@
 
 namespace Tcm232
 {
-class Handle : public SerialHandle
+// 成帧层最短接受“非空主体 + CR”，共两字节；业务 Packet 的合法性留到上层。
+class Handle : public SerialHandle<2 / 2>
 {
     Q_OBJECT
 public:
