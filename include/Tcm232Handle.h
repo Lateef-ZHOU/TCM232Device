@@ -76,14 +76,14 @@ Q_SIGNALS:
     void logMessage(const std::string &text) const final;
 
 private:
-    RXRuling onRX(const QByteArray &body, RxTime at, std::shared_ptr<SerialConn<Framer>>) final
+    RXRuling onRX(std::span<const unsigned char> view, RxTime at, std::shared_ptr<SerialConn<Framer>>) final
     {
-        return {{reinterpret_cast<const unsigned char *>(body.constData()),
-                 static_cast<std::size_t>(body.size())}, RXRuling::Decode, at};
+        return {view, RXRuling::Decode, at};
     }
 
-    TXRuling onTX(QByteArray &body, std::shared_ptr<SerialConn<Framer>> conn) const final
+    TXRuling onTX(std::span<const unsigned char> view, std::shared_ptr<SerialConn<Framer>> conn) const final
     {
+        const auto body = QByteArray::fromRawData(reinterpret_cast<const char *>(view.data()), static_cast<qsizetype>(view.size()));
         if (body.isEmpty() || body.contains('\r') || body.contains('\n'))
         {
             Q_EMIT logMessage("温控命令须为非空单行主体，未发送");
@@ -106,7 +106,7 @@ private:
             return;
         auto [conn, frame] = std::move(pending_.front());
         pending_.pop_front();
-        (void)connSend(std::move(conn), frame);
+        (void)connSend(std::move(conn), {reinterpret_cast<const unsigned char *>(frame.constData()), static_cast<std::size_t>(frame.size())});
         transmit_.start();
     }
 

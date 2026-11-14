@@ -1,3 +1,11 @@
+## 2026-11-14：发送裁决所有权与收发 span（用户定）
+
+适配拥有型 TXRuling 与只读 span 收发口。Windows Release 独立构建及 CTest 1/1 通过；原输入寿命、排队所有权和协议字节回归通过。日志：相邻主程序 build/wire-TCM232Device-{build,test}.log。重连、关闭与业务时序保持，仅本地提交，不推送；不涉及实物测试。
+
+## 2026-11-14：Handle 收发边界
+
+温控串口 onRX/onTX 改收只读 span；Queued 继续把补回车后的自有报文放入队列，定时器从队列字节借出 span 交 connSend。75 ms 间隔、首条立即发送、末条冷却、断开清队列保持。 发送顺序、重连和关闭不变；本轮不部署硬件、不推送。统一契约见 HandleCore/docs/reference.md。
+
 ## 2026-11-14：批量发送队列寿命验证
 
 串口测试将两条查询/保存报文组成嵌套 span 批次，发送后立即覆盖并销毁描述符和输入；第一条立即发送，第二条仍按 75 ms 节奏发送原始内容。生产 onTX 的补回车、队列所有权、冷却及关闭行为不变。Windows build-rxspan 构建与 CTest 1/1 通过，证据 batchspan-{build,test}.log。本轮不推送。
@@ -16,7 +24,7 @@ Windows build-rxspan 串口/后端测试 1/1 通过；新增 vector 借用入队
 
 验证：串口/业务/QML 联合 CTest 1/1 通过（build/logstring-*.log）。串口专项首跑出现一次 burst interval 断言失败；不改测试阈值或发送代码，随后连续 5 次通过（主程序 build/logstring-tcm-repeat.log）。本轮不据复跑推断严格定时保证；未做实物操作。
 
-## 2026-11-14：适配 TXRuling 只读 span（用户定）
+## 历史：2026-11-14 TXRuling 只读 span（已被上方拥有型裁决取代）
 
 onTX 适配可写缓冲引用签名，Queued 仍由原队列持有完整报文；75 ms 间隔、首条立即、末条冷却和断开清队列不变。 重连和关闭保持，与本地 HandleCore 同批使用，暂不推送。
 
