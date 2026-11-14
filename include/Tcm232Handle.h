@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <span>
 #include <memory>
 #include <deque>
 #include <utility>
@@ -13,21 +14,22 @@ class Framer
 {
 public:
     // 设备没有同步头；收齐 CR 时使用本次读取的到达时刻。
-    void feed(const QByteArray &chunk, RxTime at, const auto &deliver)
+    void feed(std::span<const unsigned char> chunk, RxTime at, const auto &deliver)
     {
-        for (const char byte : chunk)
+        for (const unsigned char byte : chunk)
         {
             if (byte == '\r')
             {
                 if (!body_.isEmpty() && Protocol::acceptChecksum(body_))
-                    deliver(body_, at);
+                    deliver({reinterpret_cast<const unsigned char *>(body_.constData()),
+                             static_cast<std::size_t>(body_.size())}, at);
                 body_.clear();
                 discarding_ = false;
             }
             else if (!discarding_)
             {
                 if (body_.size() < MaxBodyBytes)
-                    body_.append(byte);
+                    body_.append(static_cast<char>(byte));
                 else
                 {
                     body_.clear();

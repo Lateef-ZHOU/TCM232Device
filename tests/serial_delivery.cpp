@@ -66,6 +66,12 @@ void verifyQml();
 #endif
 #endif
 
+// 仅用于本次同步 feed 表达式；不延长 Qt 测试输入的生命周期。
+static std::span<const unsigned char> rxBytes(const QByteArray &bytes)
+{
+    return {reinterpret_cast<const unsigned char *>(bytes.constData()), static_cast<std::size_t>(bytes.size())};
+}
+
 int main(int argc, char **argv)
 {
 #ifdef TEST_TCM232_QML
@@ -83,24 +89,26 @@ int main(int argc, char **argv)
     std::vector<QByteArray> bodies;
     const RxTime t1 = std::chrono::system_clock::now();
     const RxTime t2 = t1 + std::chrono::seconds(1);
-    const auto record = [&](const QByteArray &b, RxTime at) {
+    const auto record = [&](std::span<const unsigned char> b, RxTime at) {
         require(at == t2, "timestamp must follow terminator");
-        bodies.push_back(b);
+        bodies.emplace_back(reinterpret_cast<const char *>(b.data()), static_cast<qsizetype>(b.size()));
     };
-    framer.feed("TC1:TCACT", t1, record);
+    std::vector<unsigned char> prefix{'T', 'C', '1', ':', 'T', 'C', 'A', 'C', 'T'};
+    framer.feed(prefix, t1, record);
+    std::fill(prefix.begin(), prefix.end(), 'x'); // 模拟下一次读取复用输入，半帧必须已取得所有权。
     require(bodies.empty(), "partial line delivered early");
-    framer.feed("TEMP=25.01\rCMD:REPLY=1\rTC2:", t2, record);
+    framer.feed(rxBytes("TEMP=25.01\rCMD:REPLY=1\rTC2:"), t2, record);
     require(bodies == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1"}, "combined replies");
-    framer.feed("TCOE=0\r\r", t2, record);
+    framer.feed(rxBytes("TCOE=0\r\r"), t2, record);
     require(bodies.size() == 3 && bodies.back() == "TC2:TCOE=0", "trailing partial or empty line");
     const QByteArray limit(Tcm232::Framer::MaxBodyBytes, 'x');
-    framer.feed(limit, t1, record);
-    framer.feed("\r", t2, record);
-    framer.feed(limit + "x", t1, record);
-    framer.feed("suffix\rTC1:TCOE=1\r", t2, record);
+    framer.feed(rxBytes(limit), t1, record);
+    framer.feed(rxBytes("\r"), t2, record);
+    framer.feed(rxBytes(limit + "x"), t1, record);
+    framer.feed(rxBytes("suffix\rTC1:TCOE=1\r"), t2, record);
     require(bodies.size() == 5 && bodies[3] == limit && bodies.back() == "TC1:TCOE=1", "oversize resync");
     bodies.clear();
-    framer.feed("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r", t2, record);
+    framer.feed(rxBytes("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r"), t2, record);
     require(bodies == std::vector<QByteArray>{"CMD:REPLY=1@255"}, "address suffix on checked frames");
 
     using P = Tcm232::Protocol;
