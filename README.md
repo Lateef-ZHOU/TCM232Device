@@ -1,3 +1,10 @@
+## 2026-11-15：网卡列表接入 vector（用户定）
+
+UDP 官邸直接缓存 const std::vector<NetworkInterfaceInfo>；拒绝负下标后按 size_t 比较和访问。选项顺序、首次枚举与字符串边界保持；75 ms 发送、每秒查询、整轮绘图、重连及关闭不变。
+
+验证：Windows 完整 QML 配置 Release 与 serial_delivery 1/1 通过，主程序构建及 8 秒冒烟通过。证据见相邻主程序 build/pcap-vector-TCM232Device-qml-*.log；不推送。
+
+
 ## 2026-11-15：UDP 网卡信息适配（用户定）
 
 Tcm232UdpDevice 接入标准字符串网卡信息，只在 QML 选项边界将 UTF-8 名称与描述转为 QString；pcap 标识原样进入连接参数。串口元数据仍按其本地编码显示。75 ms 发送队列、每秒查询、整轮绘图、重连与关闭保持，不推送。

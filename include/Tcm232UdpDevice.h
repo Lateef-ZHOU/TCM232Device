@@ -34,11 +34,11 @@ public:
     }
     Q_INVOKABLE bool open(int interfaceIndex)
     {
-        if (interfaceIndex < 0 || interfaceIndex >= interfaces().size()) {
+        if (interfaceIndex < 0 || static_cast<std::size_t>(interfaceIndex) >= interfaces().size()) {
             Q_EMIT logMessage("未选择有效网卡，连接请求未提交");
             return false;
         }
-        return PcapHandle::open(parameters(interfaces()[interfaceIndex]));
+        return PcapHandle::open(parameters(interfaces()[static_cast<std::size_t>(interfaceIndex)]));
     }
     Q_INVOKABLE void close() { Base::close(); }
     Q_INVOKABLE bool query(Tcm232::Module module, Tcm232::Command command) { return Base::query(module, command); }
@@ -53,7 +53,7 @@ private:
     void PreDestruction() noexcept final { Base::PreDestruction(); }
 
     // 选项与下标共用同一次枚举；不缓存连接表单或第二份运行参数。
-    static const QList<NetworkInterfaceInfo> &interfaces()
+    static const std::vector<NetworkInterfaceInfo> &interfaces()
     {
         static const auto result = availableInterfaces();
         return result;
