@@ -81,7 +81,7 @@ private:
                  static_cast<std::size_t>(body.size())}, RXRuling::Decode, at};
     }
 
-    TXRuling onTX(const QByteArray &body, std::shared_ptr<SerialConn<Framer>> conn) const final
+    TXRuling onTX(QByteArray &body, std::shared_ptr<SerialConn<Framer>> conn) const final
     {
         if (body.isEmpty() || body.contains('\r') || body.contains('\n'))
         {

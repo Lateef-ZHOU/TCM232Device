@@ -1,3 +1,9 @@
+## 2026-11-14：适配 TXRuling 只读 span（用户定）
+
+onTX 适配可写缓冲引用签名，Queued 仍由原队列持有完整报文；75 ms 间隔、首条立即、末条冷却和断开清队列不变。 重连和关闭保持，与本地 HandleCore 同批使用，暂不推送。
+
+Windows build-rxspan 的 serial_delivery 1/1 通过；Linux Bridge 温控转发通过。 Windows 日志为上述构建目录的 txspan-{build,test}.log。
+
 ## 2026-11-14：只读 span 接收裁决（用户定）
 
 2026-11-14 接收裁决适配：onRX 返回 `std::span<const unsigned char>` 借用接收数据，onData 同步接收零拷贝 QByteArray 视图。留存或异步投递前必须复制取得字节所有权，不能仅浅拷贝视图。协议、重连和关闭逻辑不变；与本地 HandleCore 同批使用，尚未推送。
