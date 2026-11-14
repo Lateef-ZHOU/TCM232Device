@@ -1,5 +1,6 @@
 #include <string>
 #include <algorithm>
+#include <array>
 #include <Tcm232Handle.h>
 #include "FakeSerialPort.h"
 
@@ -142,8 +143,13 @@ int main(int argc, char **argv)
     FakeSerialPort::enqueue("D\rCMD:REPLY=1@0#70\rCMD:REPLY=1@0#7d\rCMD:REPLY=1@0#7\r"
                             "TC2:TCACTTEMP=24.90@0\r");
     require(handle.available.tryAcquire(3, 3000), "serial read timed out");
-    require(handle.send(sendBytes(P::pack({{}, M::TC1, C::TCACTTEMP, query}))), "send failed");
-    require(handle.send(sendBytes(P::pack({0, M::TC2, C::TCADJTEMP, save}))), "consecutive send failed");
+    {
+        std::array<QByteArray, 2> bodies{P::pack({{}, M::TC1, C::TCACTTEMP, query}),
+                                       P::pack({0, M::TC2, C::TCADJTEMP, save})};
+        const std::array views{sendBytes(bodies[0]), sendBytes(bodies[1])};
+        require(handle.send(views), "batch enqueue failed");
+        for (auto &body : bodies) body.fill('x');
+    } // 排队的第二条不得借用已销毁的描述符或输入。
     require(!handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\r"))) && !handle.send(sendBytes(QByteArray())), "invalid body sent");
     require(FakeSerialPort::writes().size() == 1, "first immediate, second must queue");
     require(waitFor([] { return FakeSerialPort::writes().size() == 2; }), "queued command not sent");
