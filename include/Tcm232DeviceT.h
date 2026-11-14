@@ -40,8 +40,10 @@ public:
 
 private:
     using Transport::send;
-    void onData(const QByteArray &body, RxTime at) final
+    void onData(std::span<const unsigned char> bytes, RxTime at) final
     {
+        const auto body = QByteArray::fromRawData(reinterpret_cast<const char *>(bytes.data()),
+                                                static_cast<qsizetype>(bytes.size()));
         const auto parsed = Protocol::parse(body);
         if (const auto *error = std::get_if<Protocol::Error>(&parsed)) {
             switch (*error) {

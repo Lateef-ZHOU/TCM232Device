@@ -1,3 +1,11 @@
+## 2026-11-14：onData 只读 span 验证
+
+上传/测试替身适配 span；只在现有 Qt 解析或断言边界借用适配。Windows 独立构建、公开头和 CTest 1/1 通过；日志在主程序 build/ondata-TCM232Device-{build,test}.log。仅本地，不推送，无真实硬件操作。
+
+## 2026-11-14：接入只读上传视图
+
+onData(std::span<const unsigned char>, RxTime) 在收包线程同步借用字节，视图本身不保活。HandleBase 不再包含或构造 QByteArray；Decode 直接交出 RXRuling 的视图。Device/具体设备仅在现有 Qt 解析入口构造零拷贝适配，异步使用必须先取得字节所有权。发送、重连、关闭与取消链不变。 本轮不推送。
+
 ## 2026-11-14：发送裁决所有权与收发 span（用户定）
 
 适配拥有型 TXRuling 与只读 span 收发口。Windows Release 独立构建及 CTest 1/1 通过；原输入寿命、排队所有权和协议字节回归通过。日志：相邻主程序 build/wire-TCM232Device-{build,test}.log。重连、关闭与业务时序保持，仅本地提交，不推送；不涉及实物测试。
@@ -32,7 +40,7 @@ Windows build-rxspan 的 serial_delivery 1/1 通过；Linux Bridge 温控转发�
 
 ## 2026-11-14：只读 span 接收裁决（用户定）
 
-2026-11-14 接收裁决适配：onRX 返回 `std::span<const unsigned char>` 借用接收数据，onData 同步接收零拷贝 QByteArray 视图。留存或异步投递前必须复制取得字节所有权，不能仅浅拷贝视图。协议、重连和关闭逻辑不变；与本地 HandleCore 同批使用，尚未推送。
+2026-11-14 接收裁决适配：onRX 返回 `std::span<const unsigned char>` 借用接收数据，onData 同步借用只读 span，现有 Qt 解析器在消费处零拷贝适配。留存或异步投递前必须复制取得字节所有权，不能仅浅拷贝视图。协议、重连和关闭逻辑不变；与本地 HandleCore 同批使用，尚未推送。
 
 Windows/MSVC：build-rxspan 后端/串口构建及 serial_delivery 1/1 通过，75 ms 节流与关闭清队列保持。验证日志为相应构建目录下 rxspan-build.log / rxspan-test.log（Linux 使用上述命名）。
 

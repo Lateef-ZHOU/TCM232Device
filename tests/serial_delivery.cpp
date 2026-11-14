@@ -49,10 +49,10 @@ public:
     std::vector<QByteArray> received;
 
 private:
-    void onData(const QByteArray &body, RxTime at) override
+    void onData(std::span<const unsigned char> body, RxTime at) override
     {
         require(at != RxTime{}, "missing receive time");
-        received.emplace_back(body.constData(), body.size());
+        received.emplace_back(reinterpret_cast<const char *>(body.data()), static_cast<qsizetype>(body.size()));
         available.release();
     }
 };
