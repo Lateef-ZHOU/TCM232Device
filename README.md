@@ -1,3 +1,13 @@
+## 2026-11-15：单字节 onRX 成帧（用户定）
+
+验证：Windows Release、公开头编译与 serial_delivery 1/1 通过，覆盖半帧、多帧、校验、超长丢弃和自动重连清除旧半帧；原 75 ms 发送队列、首条即发及末条冷却验证保留。主程序 Release 与 8 秒离屏冒烟、Linux BridgeCore 集成 4/4 通过。证据见相邻主程序 build/serial-byte-TCM232Device-*.log、serial-byte-linux.log。未操作硬件。
+
+SerialConn/SerialHandle 不再带 Framer 模板参数，SerialFramer concept 与独立 Framer 类删除。串口仍批量读取（最多 256 字节），按序将每个新字节作为长度恰为 1 的只读 span 同步交入 onRX，沿用同一读取块的 RxTime；不调用空输入，不设置按最小帧长推算的分块参数。具体协议 Handle 的 onRX 保存半帧、校验和重同步状态，每次返回 Drop 或至多一帧；不改变 HandleBase 的单项裁决接口。
+
+接收状态仅由工作线程访问。具体 Handle 覆盖 connOpen，在每次打开（含自动重连）前清空旧半帧，再调用 SerialHandle::connOpen；关闭仍由原机制等待收包结束。RXRuling 借用的连续结果存于 Handle，保持至下一次 onRX，onData 同步消费，异步使用须取得所有权。TX vector 只读引用、发送顺序及关闭链保持；温控 75 ms 队列不变。
+
+激光器坏帧仍仅丢一字节重新找头。一次新字节最多交付一帧；若重同步后还剩完整帧，严格等待后续新字节触发，不增设空输入排空、定时补发或后台队列。若不再有输入，剩余帧就留在缓冲中，重新连接时清空。激光/温控结果使用触发交付的读取块时刻，Pelco-D 保留帧头所在块的时刻。 以下带日期的 Framer 记录仅供历史追溯，以本条为准。本轮不推送。
+
 ## 2026-11-14：温控发送直接检查 span（用户定）
 
 onTX 直接以 span::empty 和 std::ranges::any_of 检查非空单行主体，不再创建 QByteArray 借用适配；波特率枚举使用 static_cast<int>。仍拒绝包含 CR 或 LF 的命令，再补 CR 构造自有 vector 入队。首条立即发送、75 ms 间隔、末条冷却、重连和关闭清队列均保持。

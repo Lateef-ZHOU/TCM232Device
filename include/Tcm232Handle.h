@@ -12,44 +12,7 @@
 
 namespace Tcm232
 {
-class Framer
-{
-public:
-    // 设备没有同步头；收齐 CR 时使用本次读取的到达时刻。
-    void feed(std::span<const unsigned char> chunk, RxTime at, const auto &deliver)
-    {
-        for (const unsigned char byte : chunk)
-        {
-            if (byte == '\r')
-            {
-                if (!body_.isEmpty() && Protocol::acceptChecksum(body_))
-                    deliver({reinterpret_cast<const unsigned char *>(body_.constData()),
-                             static_cast<std::size_t>(body_.size())}, at);
-                body_.clear();
-                discarding_ = false;
-            }
-            else if (!discarding_)
-            {
-                if (body_.size() < MaxBodyBytes)
-                    body_.append(static_cast<char>(byte));
-                else
-                {
-                    body_.clear();
-                    discarding_ = true;
-                }
-            }
-        }
-    }
-
-    // 本机收包缓冲上限，厂家没有规定协议最大行长。
-    static constexpr qsizetype MaxBodyBytes = 4096;
-
-private:
-    QByteArray body_;
-    bool discarding_ = false;
-};
-
-class Handle : public SerialHandle<Framer>
+class Handle : public SerialHandle
 {
     Q_OBJECT
 public:
@@ -79,13 +42,45 @@ Q_SIGNALS:
     void connectionChanged(HandleCore::ResourcePhase phase) override;
     void logMessage(const std::string &text) const final;
 
-private:
-    RXRuling onRX(std::span<const unsigned char> view, RxTime at, std::shared_ptr<SerialConn<Framer>>) final
+public:
+    // 本机缓冲上限；厂家未规定协议最大行长。
+    static constexpr qsizetype MaxBodyBytes = 4096;
+
+protected:
+    // SerialConn 每次交入一个字节；回车完成本帧，输出视图保留至下次 onRX。
+    RXRuling onRX(std::span<const unsigned char> view, RxTime at, std::shared_ptr<SerialConn>) final
     {
-        return {view, RXRuling::Decode, at};
+        const auto byte = view.front();
+        if (byte == '\r') {
+            discarding_ = false;
+            if (!body_.isEmpty() && Protocol::acceptChecksum(body_)) {
+                complete_.swap(body_);
+                body_.clear();
+                return {{reinterpret_cast<const unsigned char *>(complete_.constData()),
+                         static_cast<std::size_t>(complete_.size())}, RXRuling::Decode, at};
+            }
+            body_.clear();
+        } else if (!discarding_) {
+            if (body_.size() < MaxBodyBytes)
+                body_.append(static_cast<char>(byte));
+            else {
+                body_.clear();
+                discarding_ = true;
+            }
+        }
+        return {};
     }
 
-    TXRuling onTX(std::span<const unsigned char> view, std::shared_ptr<SerialConn<Framer>> conn) const final
+private:
+    std::shared_ptr<SerialConn> connOpen(const SerialParams &params) final
+    {
+        body_.clear();
+        complete_.clear();
+        discarding_ = false;
+        return SerialHandle::connOpen(params);
+    }
+
+    TXRuling onTX(std::span<const unsigned char> view, std::shared_ptr<SerialConn> conn) const final
     {
         if (view.empty() || std::ranges::any_of(view, [](unsigned char byte) { return byte == '\r' || byte == '\n'; }))
         {
@@ -117,7 +112,10 @@ private:
         transmit_.start();
     }
 
+    // 仅收包线程使用；complete_ 保活裁决借用的完整主体，不复制字节。
+    QByteArray body_, complete_;
+    bool discarding_ = false;
     mutable QTimer transmit_{this};
-    mutable std::deque<std::pair<std::shared_ptr<SerialConn<Framer>>, std::vector<unsigned char>>> pending_;
+    mutable std::deque<std::pair<std::shared_ptr<SerialConn>, std::vector<unsigned char>>> pending_;
 };
 }

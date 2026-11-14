@@ -1,3 +1,4 @@
+#include "SerialRxProbe.h"
 #include <string>
 #include <algorithm>
 #include <array>
@@ -85,7 +86,7 @@ int main(int argc, char **argv)
             && params.parity == SP_PARITY_NONE && params.stopBits == StopBits::One
             && params.flowControl == SP_FLOWCONTROL_NONE, "serial settings");
 
-    Tcm232::Framer framer;
+    SerialRxProbe<Tcm232::Handle> receiver;
     std::vector<QByteArray> bodies;
     const RxTime t1 = std::chrono::system_clock::now();
     const RxTime t2 = t1 + std::chrono::seconds(1);
@@ -94,21 +95,21 @@ int main(int argc, char **argv)
         bodies.emplace_back(reinterpret_cast<const char *>(b.data()), static_cast<qsizetype>(b.size()));
     };
     std::vector<unsigned char> prefix{'T', 'C', '1', ':', 'T', 'C', 'A', 'C', 'T'};
-    framer.feed(prefix, t1, record);
+    receiver.feed(prefix, t1, record);
     std::fill(prefix.begin(), prefix.end(), 'x'); // 模拟下一次读取复用输入，半帧必须已取得所有权。
     require(bodies.empty(), "partial line delivered early");
-    framer.feed(rxBytes("TEMP=25.01\rCMD:REPLY=1\rTC2:"), t2, record);
+    receiver.feed(rxBytes("TEMP=25.01\rCMD:REPLY=1\rTC2:"), t2, record);
     require(bodies == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1"}, "combined replies");
-    framer.feed(rxBytes("TCOE=0\r\r"), t2, record);
+    receiver.feed(rxBytes("TCOE=0\r\r"), t2, record);
     require(bodies.size() == 3 && bodies.back() == "TC2:TCOE=0", "trailing partial or empty line");
-    const QByteArray limit(Tcm232::Framer::MaxBodyBytes, 'x');
-    framer.feed(rxBytes(limit), t1, record);
-    framer.feed(rxBytes("\r"), t2, record);
-    framer.feed(rxBytes(limit + "x"), t1, record);
-    framer.feed(rxBytes("suffix\rTC1:TCOE=1\r"), t2, record);
+    const QByteArray limit(Tcm232::Handle::MaxBodyBytes, 'x');
+    receiver.feed(rxBytes(limit), t1, record);
+    receiver.feed(rxBytes("\r"), t2, record);
+    receiver.feed(rxBytes(limit + "x"), t1, record);
+    receiver.feed(rxBytes("suffix\rTC1:TCOE=1\r"), t2, record);
     require(bodies.size() == 5 && bodies[3] == limit && bodies.back() == "TC1:TCOE=1", "oversize resync");
     bodies.clear();
-    framer.feed(rxBytes("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r"), t2, record);
+    receiver.feed(rxBytes("CMD:REPLY=1#0D\rCMD:REPLY=1@256#7C\rCMD:REPLY=1@A#0C\rCMD:REPLY=1@255#7F\r"), t2, record);
     require(bodies == std::vector<QByteArray>{"CMD:REPLY=1@255"}, "address suffix on checked frames");
 
     using P = Tcm232::Protocol;
@@ -188,10 +189,15 @@ int main(int argc, char **argv)
     require(waitFor([&] { return handle.isOpen(); }), "reopen timeout");
     require(handle.send(sendBytes(QByteArray("SYSTEM:SYSSN?"))) && FakeSerialPort::writes().size() == 5, "reopen first command");
     require(handle.send(sendBytes(QByteArray("TC1:TCOE?"))), "reconnect queue");
+    const auto readBefore = FakeSerialPort::reads();
+    FakeSerialPort::enqueue("STALE");
+    require(waitFor([&] { return FakeSerialPort::reads() > readBefore; }), "partial line not read");
     FakeSerialPort::failRead();
     require(waitFor([&] { return !handle.isOpen(); }), "disconnect timeout");
     require(waitFor([&] { return handle.isOpen(); }), "auto reconnect timeout");
     require(FakeSerialPort::writes().size() == 5, "old command crossed reconnection");
+    FakeSerialPort::enqueue("\rTC1:TCOE=1\r");
+    require(handle.available.tryAcquire(1, 3000), "new connection did not receive line");
     int failures = 0;
     QObject::connect(&handle, &Tcm232::Handle::logMessage, &handle, [&](const std::string &utf8Message) { const QString message = QString::fromUtf8(utf8Message.data(), qsizetype(utf8Message.size()));
         if (message == QStringLiteral("串口发送失败")) ++failures;
@@ -201,6 +207,7 @@ int main(int argc, char **argv)
     require(failures == 1, "actual send failure not logged");
     handle.close();
     require(FakeSerialPort::livePorts() == 0, "reconnect port not released");
+    require(handle.received.size() == 4 && handle.received.back() == "TC1:TCOE=1", "partial line crossed reconnection");
     FakeSerialPort::reset();
     {
         Probe dying;
