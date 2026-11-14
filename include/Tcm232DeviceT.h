@@ -21,15 +21,21 @@ public:
     }
     bool query(Tcm232::Module module, Tcm232::Command command)
     {
-        return Transport::send(Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Query)}));
+        const auto body = Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Query)});
+        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
+                              static_cast<std::size_t>(body.size())});
     }
     bool setParameter(Tcm232::Module module, Tcm232::Command command, const QVariant &value)
     {
-        return Transport::send(Protocol::pack({{}, module, command, value}));
+        const auto body = Protocol::pack({{}, module, command, value});
+        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
+                              static_cast<std::size_t>(body.size())});
     }
     bool saveParameter(Tcm232::Module module, Tcm232::Command command)
     {
-        return Transport::send(Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Save)}));
+        const auto body = Protocol::pack({{}, module, command, QVariant::fromValue(ValueType::Save)});
+        return Transport::send({reinterpret_cast<const unsigned char *>(body.constData()),
+                              static_cast<std::size_t>(body.size())});
     }
 
 private:

@@ -1,6 +1,14 @@
 #include <string>
+#include <algorithm>
 #include <Tcm232Handle.h>
 #include "FakeSerialPort.h"
+
+// 仅供同步发送表达式借用；返回视图不保活参数，不能跨语句保存。
+static std::span<const unsigned char> sendBytes(const QByteArray &bytes)
+{
+    return {reinterpret_cast<const unsigned char *>(bytes.constData()), static_cast<std::size_t>(bytes.size())};
+}
+
 #ifdef TEST_TCM232_QML
 #include <QGuiApplication>
 #else
@@ -134,32 +142,35 @@ int main(int argc, char **argv)
     FakeSerialPort::enqueue("D\rCMD:REPLY=1@0#70\rCMD:REPLY=1@0#7d\rCMD:REPLY=1@0#7\r"
                             "TC2:TCACTTEMP=24.90@0\r");
     require(handle.available.tryAcquire(3, 3000), "serial read timed out");
-    require(handle.send(P::pack({{}, M::TC1, C::TCACTTEMP, query})), "send failed");
-    require(handle.send(P::pack({0, M::TC2, C::TCADJTEMP, save})), "consecutive send failed");
-    require(!handle.send(QByteArray("TC1:TCACTTEMP?\r")) && !handle.send(QByteArray()), "invalid body sent");
+    require(handle.send(sendBytes(P::pack({{}, M::TC1, C::TCACTTEMP, query}))), "send failed");
+    require(handle.send(sendBytes(P::pack({0, M::TC2, C::TCADJTEMP, save}))), "consecutive send failed");
+    require(!handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\r"))) && !handle.send(sendBytes(QByteArray())), "invalid body sent");
     require(FakeSerialPort::writes().size() == 1, "first immediate, second must queue");
     require(waitFor([] { return FakeSerialPort::writes().size() == 2; }), "queued command not sent");
     require(FakeSerialPort::writeTimes()[1] - FakeSerialPort::writeTimes()[0] >= std::chrono::milliseconds(75), "burst interval");
     // 第二条已经清空队列；冷却未结束时提交第三条，仍不可立即发送。
-    require(handle.send(QByteArray("TC1:TCSW?")), "cooldown enqueue");
+    std::vector<unsigned char> borrowed{'T', 'C', '1', ':', 'T', 'C', 'S', 'W', '?'};
+    require(handle.send(borrowed), "cooldown enqueue");
+    std::fill(borrowed.begin(), borrowed.end(), 'x'); // 队列必须拥有补回车后的报文，不能继续借用输入。
     require(FakeSerialPort::writes().size() == 2, "empty queue bypassed cooldown");
     require(waitFor([] { return FakeSerialPort::writes().size() == 3; }), "cooldown lost new command");
+    require(FakeSerialPort::writes()[2] == "TC1:TCSW?\r", "queued frame borrowed caller bytes");
     require(FakeSerialPort::writeTimes()[2] - FakeSerialPort::writeTimes()[1] >= std::chrono::milliseconds(75), "tail cooldown interval");
     (void)waitFor([] { return false; }, 150);
-    require(handle.send(QByteArray("TC1:TCOE?")) && FakeSerialPort::writes().size() == 4, "idle first command delayed");
-    require(handle.send(QByteArray("TC1:TCERRORSTATUS?")), "enqueue before close");
+    require(handle.send(sendBytes(QByteArray("TC1:TCOE?"))) && FakeSerialPort::writes().size() == 4, "idle first command delayed");
+    require(handle.send(sendBytes(QByteArray("TC1:TCERRORSTATUS?"))), "enqueue before close");
     handle.close();
     (void)waitFor([] { return false; }, 150);
     require(FakeSerialPort::writes().size() == 4, "close leaked queued command");
-    require(!handle.send(QByteArray("TC1:TCOE?")), "offline queued command accepted");
+    require(!handle.send(sendBytes(QByteArray("TC1:TCOE?"))), "offline queued command accepted");
     require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1@0",
                                                        "TC2:TCACTTEMP=24.90@0"}, "serial bodies");
     require(FakeSerialPort::writes() == std::vector<QByteArray>{"TC1:TCACTTEMP?\r", "TC2:TCADJTEMP!@0\r", "TC1:TCSW?\r", "TC1:TCOE?\r"}, "wire framing");
     require(FakeSerialPort::livePorts() == 0, "port not released");
     require(handle.open(params), "reopen");
     require(waitFor([&] { return handle.isOpen(); }), "reopen timeout");
-    require(handle.send(QByteArray("SYSTEM:SYSSN?")) && FakeSerialPort::writes().size() == 5, "reopen first command");
-    require(handle.send(QByteArray("TC1:TCOE?")), "reconnect queue");
+    require(handle.send(sendBytes(QByteArray("SYSTEM:SYSSN?"))) && FakeSerialPort::writes().size() == 5, "reopen first command");
+    require(handle.send(sendBytes(QByteArray("TC1:TCOE?"))), "reconnect queue");
     FakeSerialPort::failRead();
     require(waitFor([&] { return !handle.isOpen(); }), "disconnect timeout");
     require(waitFor([&] { return handle.isOpen(); }), "auto reconnect timeout");
@@ -169,7 +180,7 @@ int main(int argc, char **argv)
         if (message == QStringLiteral("串口发送失败")) ++failures;
     });
     FakeSerialPort::writeResult(-1);
-    require(handle.send(QByteArray("TC1:TCOE?")), "Queued must report acceptance");
+    require(handle.send(sendBytes(QByteArray("TC1:TCOE?"))), "Queued must report acceptance");
     require(failures == 1, "actual send failure not logged");
     handle.close();
     require(FakeSerialPort::livePorts() == 0, "reconnect port not released");
@@ -177,7 +188,7 @@ int main(int argc, char **argv)
     {
         Probe dying;
         require(dying.open(params) && waitFor([&] { return dying.isOpen(); }), "destruction open");
-        require(dying.send(QByteArray("TC1:TCOE?")) && dying.send(QByteArray("TC1:TCSW?")), "destruction queue");
+        require(dying.send(sendBytes(QByteArray("TC1:TCOE?"))) && dying.send(sendBytes(QByteArray("TC1:TCSW?"))), "destruction queue");
     }
     (void)waitFor([] { return false; }, 150);
     require(FakeSerialPort::writes().size() == 1 && FakeSerialPort::livePorts() == 0, "destruction leaked pending send");
