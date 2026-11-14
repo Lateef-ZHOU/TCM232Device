@@ -1,3 +1,11 @@
+## 2026-11-14：connSend 引用传输验证
+
+发送实现/测试替身适配 connSend 的 vector 只读引用；生产 RX 保持 span。Windows Release 独立构建和 CTest 1/1 通过，主程序增量构建和生命周期 8/8、8 秒离屏冒烟通过。证据相邻主程序 build/connsend-TCM232Device-*.log。无硬件操作，仅本地、不推送。
+
+## 2026-11-14：connSend 使用自有数组的只读引用（用户定）
+
+connSend 统一接受 const std::vector<unsigned char>&，各串口、网口、DMA 和仿真实现保持同一虚接口。Encode 直接引用自有 TXRuling；SerialHandle 直接把同一数组交给 SerialConn::send，删除临时 vector 复制。RX 与 onTX 输入仍为只读 span，异步回复和定时发送队列自行持有字节。发送顺序、失败短路、重连和关闭保持。 温控队列直接持有补回车后的 vector，出队移动所有权后按引用发送；首条立即发送、75 ms 节奏、末条冷却、断开清队列不变。下方旧 span 发送记录为阶段历史，以本条为准。
+
 ## 2026-11-14：串口成帧 span 验证
 
 成帧器 feed/deliver 改用只读 span；底层缓冲仍自有，测试留存结果时复制字节。新增输入覆盖后续接半帧验证，保留多帧、校验、超长行恢复和 75 ms 队列测试。Windows Release、公开头及 CTest 1/1 通过。主程序构建和离屏冒烟通过，日志在主程序 build/framerspan-TCM232Device-*.log。未操作硬件、不推送。

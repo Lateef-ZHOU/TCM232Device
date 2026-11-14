@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include <span>
 #include <memory>
 #include <deque>
@@ -95,7 +96,11 @@ private:
             Q_EMIT logMessage("设备未连接，无法发送数据");
             return {};
         }
-        pending_.emplace_back(std::move(conn), body + '\r');
+        std::vector<unsigned char> frame;
+        frame.reserve(view.size() + 1);
+        frame.insert(frame.end(), view.begin(), view.end());
+        frame.push_back('\r');
+        pending_.emplace_back(std::move(conn), std::move(frame));
         if (!transmit_.isActive())
             sendNext();
         return {{}, TXRuling::Queued};
@@ -108,11 +113,11 @@ private:
             return;
         auto [conn, frame] = std::move(pending_.front());
         pending_.pop_front();
-        (void)connSend(std::move(conn), {reinterpret_cast<const unsigned char *>(frame.constData()), static_cast<std::size_t>(frame.size())});
+        (void)connSend(std::move(conn), frame);
         transmit_.start();
     }
 
     mutable QTimer transmit_{this};
-    mutable std::deque<std::pair<std::shared_ptr<SerialConn<Framer>>, QByteArray>> pending_;
+    mutable std::deque<std::pair<std::shared_ptr<SerialConn<Framer>>, std::vector<unsigned char>>> pending_;
 };
 }
