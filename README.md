@@ -1,3 +1,10 @@
+## 2026-11-15：UDP 网卡信息适配（用户定）
+
+Tcm232UdpDevice 接入标准字符串网卡信息，只在 QML 选项边界将 UTF-8 名称与描述转为 QString；pcap 标识原样进入连接参数。串口元数据仍按其本地编码显示。75 ms 发送队列、每秒查询、整轮绘图、重连与关闭保持，不推送。
+
+验证：Windows 完整 QML 配置的 Release 构建与 serial_delivery 1/1 通过（含设备及 QML 验证），主程序增量构建、8 秒离屏冒烟及配置的 qmllint 目标通过。证据见相邻主程序 build/pcap-string-TCM232Device-qml-*.log。
+
+
 ## 2026-11-15：按半个最小帧长分块上传（用户定）
 
 本轮验证：Windows Release、公开头与 serial_delivery 1/1 通过，温控继续按一字节交付；半帧、多帧、75 ms 发送、末条冷却和重连清理验证通过。主程序 Release、8 秒冒烟和温控配置的 qmllint 目标通过，Linux BridgeCore 集成 4/4 通过。日志见相邻主程序 build/serial-chunk-TCM232Device-*.log、serial-chunk-qmllint.log 和 serial-chunk-linux.log。未操作硬件。

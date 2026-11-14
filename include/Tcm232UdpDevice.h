@@ -26,7 +26,10 @@ public:
     [[nodiscard]] QVariantMap connectionParameters() const
     {
         QStringList names, tips;
-        for (const auto &entry : interfaces()) { names << entry.friendlyName; tips << entry.description; }
+        for (const auto &entry : interfaces()) {
+            names << QString::fromStdString(entry.friendlyName);
+            tips << QString::fromStdString(entry.description);
+        }
         return {{"networkInterfaceOptions", names}, {"networkInterfaceTips", tips}};
     }
     Q_INVOKABLE bool open(int interfaceIndex)
