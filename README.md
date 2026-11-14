@@ -1,3 +1,9 @@
+## 2026-11-14：温控发送直接检查 span（用户定）
+
+onTX 直接以 span::empty 和 std::ranges::any_of 检查非空单行主体，不再创建 QByteArray 借用适配；波特率枚举使用 static_cast<int>。仍拒绝包含 CR 或 LF 的命令，再补 CR 构造自有 vector 入队。首条立即发送、75 ms 间隔、末条冷却、重连和关闭清队列均保持。
+
+Windows Release 独立构建、公开头与 serial_delivery 1/1 通过，补齐 LF 拒收验证，保留空命令、CR、队列所有权及启停覆盖。主程序 Release 增量构建与 8 秒离屏冒烟通过，stderr 与原字体基线一致。证据相邻主程序 build/tcm-spancheck-*.log 和 tcm-spancheck-smoke.json。仅本地提交，未推送、未操作板卡。
+
 ## 2026-11-14：connSend 引用传输验证
 
 发送实现/测试替身适配 connSend 的 vector 只读引用；生产 RX 保持 span。Windows Release 独立构建和 CTest 1/1 通过，主程序增量构建和生命周期 8/8、8 秒离屏冒烟通过。证据相邻主程序 build/connsend-TCM232Device-*.log。无硬件操作，仅本地、不推送。

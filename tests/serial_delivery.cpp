@@ -159,7 +159,9 @@ int main(int argc, char **argv)
         require(handle.send(commands), "batch enqueue failed");
         for (auto &body : bodies) body.fill('x');
     } // 排队的第二条不得借用已销毁的命令数组。
-    require(!handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\r"))) && !handle.send(sendBytes(QByteArray())), "invalid body sent");
+    require(!handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\r")))
+            && !handle.send(sendBytes(QByteArray("TC1:TCACTTEMP?\n")))
+            && !handle.send(sendBytes(QByteArray())), "invalid body sent");
     require(FakeSerialPort::writes().size() == 1, "first immediate, second must queue");
     require(waitFor([] { return FakeSerialPort::writes().size() == 2; }), "queued command not sent");
     require(FakeSerialPort::writeTimes()[1] - FakeSerialPort::writeTimes()[0] >= std::chrono::milliseconds(75), "burst interval");

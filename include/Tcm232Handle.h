@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <span>
@@ -70,7 +71,7 @@ public:
     {
         SerialParams params;
         params.portInfo = port;
-        params.baudRate = qToUnderlying(BaudRate::B57600);
+        params.baudRate = static_cast<int>(BaudRate::B57600);
         return params;
     }
 
@@ -86,8 +87,7 @@ private:
 
     TXRuling onTX(std::span<const unsigned char> view, std::shared_ptr<SerialConn<Framer>> conn) const final
     {
-        const auto body = QByteArray::fromRawData(reinterpret_cast<const char *>(view.data()), static_cast<qsizetype>(view.size()));
-        if (body.isEmpty() || body.contains('\r') || body.contains('\n'))
+        if (view.empty() || std::ranges::any_of(view, [](unsigned char byte) { return byte == '\r' || byte == '\n'; }))
         {
             Q_EMIT logMessage("温控命令须为非空单行主体，未发送");
             return {};
