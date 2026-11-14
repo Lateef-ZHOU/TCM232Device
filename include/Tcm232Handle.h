@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <memory>
 #include <deque>
 #include <utility>
@@ -72,7 +73,7 @@ public:
 
 Q_SIGNALS:
     void connectionChanged(HandleCore::ResourcePhase phase) override;
-    void logMessage(const QString &text) const final;
+    void logMessage(const std::string &text) const final;
 
 private:
     RXRuling onRX(const QByteArray &body, RxTime at, std::shared_ptr<SerialConn<Framer>>) final
@@ -85,11 +86,11 @@ private:
     {
         if (body.isEmpty() || body.contains('\r') || body.contains('\n'))
         {
-            Q_EMIT logMessage(QStringLiteral("温控命令须为非空单行主体，未发送"));
+            Q_EMIT logMessage("温控命令须为非空单行主体，未发送");
             return {};
         }
         if (!conn) {
-            Q_EMIT logMessage(QStringLiteral("设备未连接，无法发送数据"));
+            Q_EMIT logMessage("设备未连接，无法发送数据");
             return {};
         }
         pending_.emplace_back(std::move(conn), body + '\r');

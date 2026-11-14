@@ -32,7 +32,7 @@ public:
     Q_INVOKABLE bool open(int interfaceIndex)
     {
         if (interfaceIndex < 0 || interfaceIndex >= interfaces().size()) {
-            Q_EMIT logMessage(QStringLiteral("未选择有效网卡，连接请求未提交"));
+            Q_EMIT logMessage("未选择有效网卡，连接请求未提交");
             return false;
         }
         return PcapHandle::open(parameters(interfaces()[interfaceIndex]));

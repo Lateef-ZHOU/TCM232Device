@@ -39,17 +39,17 @@ private:
         const auto parsed = Protocol::parse(body);
         if (const auto *error = std::get_if<Protocol::Error>(&parsed)) {
             switch (*error) {
-            case Protocol::Error::Address: Q_EMIT this->logMessage(QStringLiteral("温控回报地址无效")); break;
-            case Protocol::Error::ModuleName: Q_EMIT this->logMessage(QStringLiteral("温控回报模块未知")); break;
-            case Protocol::Error::CommandName: Q_EMIT this->logMessage(QStringLiteral("温控回报命令未知")); break;
-            case Protocol::Error::Value: Q_EMIT this->logMessage(QStringLiteral("温控回报值无效")); break;
-            case Protocol::Error::Syntax: Q_EMIT this->logMessage(QStringLiteral("温控回报语法无效")); break;
+            case Protocol::Error::Address: Q_EMIT this->logMessage("温控回报地址无效"); break;
+            case Protocol::Error::ModuleName: Q_EMIT this->logMessage("温控回报模块未知"); break;
+            case Protocol::Error::CommandName: Q_EMIT this->logMessage("温控回报命令未知"); break;
+            case Protocol::Error::Value: Q_EMIT this->logMessage("温控回报值无效"); break;
+            case Protocol::Error::Syntax: Q_EMIT this->logMessage("温控回报语法无效"); break;
             }
             return;
         }
         const auto &packet = std::get<Protocol::Packet>(parsed);
         if (packet.value.metaType() == QMetaType::fromType<Protocol::ValueType>()) {
-            Q_EMIT this->logMessage(QStringLiteral("温控收到查询或保存命令，预期为带值回报"));
+            Q_EMIT this->logMessage("温控收到查询或保存命令，预期为带值回报");
             return;
         }
         Q_EMIT packetReceived(at, packet);

@@ -1,3 +1,4 @@
+#include <string>
 #include <Tcm232Device.h>
 #include <LaserTelemetryItem.h>
 #include <QQmlListReference>
@@ -59,7 +60,7 @@ public:
 Q_SIGNALS:
     void connectionChanged(HandleCore::ResourcePhase phase);
     void packetReceived(RxTime at, const Tcm232::Packet &packet);
-    void logMessage(const QString &text);
+    void logMessage(const std::string &text);
 private:
     bool record(const Tcm232::Packet &packet)
     {

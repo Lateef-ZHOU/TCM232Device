@@ -36,7 +36,7 @@ public:
     Q_INVOKABLE bool open(const QString &port)
     {
         if (port.trimmed().isEmpty()) {
-            Q_EMIT logMessage(QStringLiteral("请选择串口"));
+            Q_EMIT logMessage("请选择串口");
             return false;
         }
         return Handle::open(parameters({port, {}}));

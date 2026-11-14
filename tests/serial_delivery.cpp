@@ -1,3 +1,4 @@
+#include <string>
 #include <Tcm232Handle.h>
 #include "FakeSerialPort.h"
 #ifdef TEST_TCM232_QML
@@ -164,7 +165,7 @@ int main(int argc, char **argv)
     require(waitFor([&] { return handle.isOpen(); }), "auto reconnect timeout");
     require(FakeSerialPort::writes().size() == 5, "old command crossed reconnection");
     int failures = 0;
-    QObject::connect(&handle, &Tcm232::Handle::logMessage, &handle, [&](const QString &message) {
+    QObject::connect(&handle, &Tcm232::Handle::logMessage, &handle, [&](const std::string &utf8Message) { const QString message = QString::fromUtf8(utf8Message.data(), qsizetype(utf8Message.size()));
         if (message == QStringLiteral("串口发送失败")) ++failures;
     });
     FakeSerialPort::writeResult(-1);
