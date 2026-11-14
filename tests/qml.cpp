@@ -249,7 +249,7 @@ void verifyQml()
             if (QThread::currentThread() == qApp->thread()) qFatal("expected serial worker");
             sent.push_back(at);
         }, Qt::DirectConnection);
-    if (!device.open(device.parameters({QStringLiteral("controlled"), {}}))) qFatal("open rejected");
+    if (!device.open(device.parameters({"controlled", {}}))) qFatal("open rejected");
     FakeSerialPort::enqueue("TC1:TCACTTEMP?\rTC2:TCACTTEMP!\rTC2:TCACTTEMP=oops\r"
                             "TC1:TCACTTEMP=24.5\rCMD:REPLY=4@0\rTC2:TCACTTEMP=-1.5@255\r");
     QElapsedTimer timeout;

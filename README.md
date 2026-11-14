@@ -1,3 +1,11 @@
+## 2026-11-14：串口标准字符串验证
+
+适配 SerialPortInfo 标准字符串；QML 签名不变，仅显示/输入边界进行本地编码转换。Windows 独立 Release、公开头与 CTest 1/1 通过，主程序增量构建和 8 秒离屏冒烟通过。日志：主程序 build/serialstring-TCM232Device-*.log。本轮未操作硬件、不推送。
+
+## 2026-11-14：串口字符串边界
+
+SerialPortInfo 的名称与描述改用 std::string，保留 libserialport 原始编码。仅在 QML/命令行边界转换 Qt 字符串，线路规格文本转换返回标准字符串。协议、连接参数及关闭行为不变。本轮不推送。
+
 ## 2026-11-14：vector 引用发送验证
 
 测试调用适配 const vector& 发送入口；Windows 独立构建、公开头及 CTest 1/1 通过。温控原有 75 ms 节流、首条立即、末条冷却和断开清队列验证保持。证据主程序 build/vectorsend-TCM232Device-{build,test}.log。未操作硬件、不推送。

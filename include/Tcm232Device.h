@@ -29,7 +29,7 @@ public:
     Q_INVOKABLE QStringList ports() const
     {
         QStringList names;
-        for (const auto &port : availablePorts()) names.append(port.portName);
+        for (const auto &port : availablePorts()) names.append(QString::fromLocal8Bit(port.portName.data(), static_cast<qsizetype>(port.portName.size())));
         return names;
     }
     using Handle::open;
@@ -39,7 +39,7 @@ public:
             Q_EMIT logMessage("请选择串口");
             return false;
         }
-        return Handle::open(parameters({port, {}}));
+        return Handle::open(parameters({port.toLocal8Bit().toStdString(), {}}));
     }
     Q_INVOKABLE void close() { Handle::close(); }
 
