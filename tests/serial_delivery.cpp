@@ -19,6 +19,8 @@ static std::vector<unsigned char> sendBytes(const QByteArray &bytes)
 #endif
 #include <QSemaphore>
 #include <QElapsedTimer>
+#include <QEvent>
+#include <QThread>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -58,6 +60,96 @@ private:
         available.release();
     }
 };
+
+void delayedReleaseAfterReopen()
+{
+    for (const bool queueBeforeDelivery : {false, true})
+    {
+        FakeSerialPort::reset();
+        Probe handle;
+        QSemaphore acquired;
+        int released = 0, closing = 0;
+        QObject::connect(&handle, &Tcm232::Handle::connectionChanged, &handle,
+            [&](HandleCore::ResourcePhase phase) {
+                if (phase == HandleCore::ResourcePhase::Acquired)
+                    acquired.release();
+            }, Qt::DirectConnection);
+        QObject::connect(&handle, &Tcm232::Handle::connectionChanged, &handle,
+            [&](HandleCore::ResourcePhase phase) {
+                require(QThread::currentThread() == handle.thread(), "phase consumer left owner thread");
+                if (phase == HandleCore::ResourcePhase::Released)
+                    ++released;
+                if (phase == HandleCore::ResourcePhase::AboutToRelease) {
+                    require(handle.isOpen() && FakeSerialPort::livePorts() == 1,
+                            "active close revoked connection before notification");
+                    ++closing;
+                }
+            });
+        const auto params = Tcm232::Handle::parameters("controlled");
+        require(handle.open(params) && acquired.tryAcquire(1, 3000), "late-release initial open");
+        require(handle.send(sendBytes("OLD:FIRST?")) && handle.send(sendBytes("OLD:PENDING?")),
+                "late-release old queue");
+        handle.close();
+        require(closing == 1 && released == 0 && FakeSerialPort::livePorts() == 0,
+                "close cleanup was queued or retained old connection");
+        // 不泵事件：旧 Released 仍在队列中，新连接已经发布并接受命令。
+        require(handle.open(params) && acquired.tryAcquire(1, 3000), "late-release immediate reopen");
+        require(handle.send(sendBytes("NEW:FIRST?")), "late-release new first command");
+        if (queueBeforeDelivery)
+            require(handle.send(sendBytes("NEW:NEXT?")), "late-release new pending command");
+        QCoreApplication::sendPostedEvents(&handle, QEvent::MetaCall);
+        require(released == 1 && closing == 1, "old release was not delivered independently of close");
+        if (!queueBeforeDelivery)
+            require(handle.send(sendBytes("NEW:NEXT?")), "late-release command during cooldown");
+        require(FakeSerialPort::writes().size() == 2, "old release cancelled new cooldown");
+        require(waitFor([] { return FakeSerialPort::writes().size() == 3; }),
+                "old release cleared new pending command");
+        require(FakeSerialPort::writes() == std::vector<QByteArray>{"OLD:FIRST?\r", "NEW:FIRST?\r", "NEW:NEXT?\r"},
+                "old pending command survived active close");
+        const auto times = FakeSerialPort::writeTimes();
+        require(times[2] - times[1] >= std::chrono::milliseconds(75), "late release shortened cooldown");
+        handle.close();
+        require(closing == 2 && FakeSerialPort::livePorts() == 0, "reopened connection cleanup failed");
+    }
+}
+
+void delayedReleaseAfterReconnect()
+{
+    FakeSerialPort::reset();
+    Probe handle;
+    QSemaphore acquired;
+    int closing = 0, released = 0;
+    QObject::connect(&handle, &Tcm232::Handle::connectionChanged, &handle,
+        [&](HandleCore::ResourcePhase phase) {
+            if (phase == HandleCore::ResourcePhase::Acquired)
+                acquired.release();
+        }, Qt::DirectConnection);
+    QObject::connect(&handle, &Tcm232::Handle::connectionChanged, &handle,
+        [&](HandleCore::ResourcePhase phase) {
+            if (phase == HandleCore::ResourcePhase::AboutToRelease) ++closing;
+            if (phase == HandleCore::ResourcePhase::Released) ++released;
+        });
+    require(handle.open(Tcm232::Handle::parameters("controlled")) && acquired.tryAcquire(1, 3000),
+            "delayed reconnect initial open");
+    require(handle.send(sendBytes("OLD:FIRST?")) && handle.send(sendBytes("OLD:PENDING?")),
+            "delayed reconnect old queue");
+    FakeSerialPort::failRead();
+    // 连重连间隙也不泵主线程事件，验证旧命令不延长失效连接寿命。
+    require(acquired.tryAcquire(1, 3000), "delayed automatic reconnect");
+    require(closing == 0 && released == 0 && FakeSerialPort::closes() == 1 && FakeSerialPort::livePorts() == 1,
+            "automatic reconnect retained old connection or emitted active close");
+    require(handle.send(sendBytes("NEW:FIRST?")) && handle.send(sendBytes("NEW:NEXT?")),
+            "delayed reconnect new queue");
+    QCoreApplication::sendPostedEvents(&handle, QEvent::MetaCall);
+    require(released == 1 && closing == 0, "automatic release became active close");
+    require(waitFor([] { return FakeSerialPort::writes().size() == 3; }), "automatic release cleared new queue");
+    require(FakeSerialPort::writes() == std::vector<QByteArray>{"OLD:FIRST?\r", "NEW:FIRST?\r", "NEW:NEXT?\r"},
+            "expired connection command crossed automatic reconnect");
+    const auto times = FakeSerialPort::writeTimes();
+    require(times[2] - times[1] >= std::chrono::milliseconds(75), "automatic reconnect shortened cooldown");
+    handle.close();
+    require(closing == 1 && FakeSerialPort::livePorts() == 0, "automatic reconnect final cleanup failed");
+}
 }
 
 #ifdef TEST_TCM232_DEVICE
@@ -85,6 +177,10 @@ int main(int argc, char **argv)
     require(params.portName == "controlled" && params.baudRate == 57600 && params.dataBits == DataBits::D8
             && params.parity == SP_PARITY_NONE && params.stopBits == StopBits::One
             && params.flowControl == SP_FLOWCONTROL_NONE, "serial settings");
+
+    delayedReleaseAfterReopen();
+    delayedReleaseAfterReconnect();
+    FakeSerialPort::reset();
 
     SerialRxProbe<Tcm232::Handle, 1> receiver;
     std::vector<QByteArray> bodies;

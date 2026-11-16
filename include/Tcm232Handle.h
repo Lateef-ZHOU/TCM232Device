@@ -24,7 +24,7 @@ public:
         transmit_.setInterval(75);
         QObject::connect(&transmit_, &QTimer::timeout, this, [this] { sendNext(); });
         QObject::connect(this, &Handle::connectionChanged, this, [this](HandleCore::ResourcePhase phase) {
-            if (phase == HandleCore::ResourcePhase::AboutToRelease || phase == HandleCore::ResourcePhase::Released) {
+            if (phase == HandleCore::ResourcePhase::AboutToRelease) {
                 transmit_.stop();
                 pending_.clear();
             }
@@ -95,7 +95,7 @@ private:
         frame.reserve(payload.size() + 1);
         frame.insert(frame.end(), payload.begin(), payload.end());
         frame.push_back('\r');
-        pending_.emplace_back(std::move(conn), std::move(frame));
+        pending_.emplace_back(conn, std::move(frame));
         if (!transmit_.isActive())
             sendNext();
         return {{}, TXRuling::Queued};
@@ -104,18 +104,23 @@ private:
     // 仅所属主线程访问；末条发送后仍计时一次，覆盖空队列期间的新命令。
     void sendNext() const
     {
-        if (pending_.empty())
-            return;
-        auto [conn, frame] = std::move(pending_.front());
-        pending_.pop_front();
-        (void)connSend(std::move(conn), frame);
-        transmit_.start();
+        while (!pending_.empty()) {
+            auto [connection, frame] = std::move(pending_.front());
+            pending_.pop_front();
+            // 自动重连已释放的旧连接不再发送，也不占用新命令的冷却时隙。
+            if (auto conn = connection.lock()) {
+                (void)connSend(std::move(conn), frame);
+                transmit_.start();
+                return;
+            }
+        }
     }
 
     // 仅收包线程使用；complete_ 每次交付前由新主体交换替换，并保活裁决借用的字节。
     QByteArray body_, complete_;
     bool discarding_ = false;
     mutable QTimer transmit_{this};
-    mutable std::deque<std::pair<std::shared_ptr<SerialConn>, std::vector<unsigned char>>> pending_;
+    // 待发字节自有，连接只作弱关联；失联后不因排队延长旧串口寿命。
+    mutable std::deque<std::pair<std::weak_ptr<SerialConn>, std::vector<unsigned char>>> pending_;
 };
 }
