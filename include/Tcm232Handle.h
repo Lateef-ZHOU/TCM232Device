@@ -81,9 +81,9 @@ private:
         return SerialHandle::connOpen(params);
     }
 
-    TXRuling onTX(std::span<const unsigned char> view, std::shared_ptr<SerialConn> conn) const final
+    TXRuling onTX(const std::vector<unsigned char> &payload, std::shared_ptr<SerialConn> conn) const final
     {
-        if (view.empty() || std::ranges::any_of(view, [](unsigned char byte) { return byte == '\r' || byte == '\n'; }))
+        if (payload.empty() || std::ranges::any_of(payload, [](unsigned char byte) { return byte == '\r' || byte == '\n'; }))
         {
             Q_EMIT logMessage("温控命令须为非空单行主体，未发送");
             return {};
@@ -93,8 +93,8 @@ private:
             return {};
         }
         std::vector<unsigned char> frame;
-        frame.reserve(view.size() + 1);
-        frame.insert(frame.end(), view.begin(), view.end());
+        frame.reserve(payload.size() + 1);
+        frame.insert(frame.end(), payload.begin(), payload.end());
         frame.push_back('\r');
         pending_.emplace_back(std::move(conn), std::move(frame));
         if (!transmit_.isActive())

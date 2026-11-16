@@ -1,3 +1,7 @@
+## 2026-11-17：onTX 接入 vector 只读引用（用户定）
+
+onTX 输入统一为 const std::vector<unsigned char>&，同步传参不复制调用方数组；RX 仍用只读 span。命令检查、补回车和异步队列所有权保持；首条立即发送、75ms 间隔、末条冷却及断开清队列不变。 不新增成员状态；使用相邻本地 HandleCore 源码覆盖，远端锁定版本暂不变，不推送。Windows 完整配置 Release 与串口/设备/QML 综合测试 1/1 通过。 证据见主程序 docs/maintenance/validation.md 本轮记录。
+
 ## 2026-11-17：网口地址迁移（用户定）
 
 Tcm232UdpDevice 的固定 IP 改为 PacketProtocol::IPv4Header::Address，从四字节 array 构造；业务地址、端口、75 ms 发送间隔、每秒查询及整轮绘图保持。采用相邻 HandleCore 的新协议，不增加旧地址兼容层。
