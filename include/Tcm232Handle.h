@@ -35,7 +35,7 @@ public:
     {
         SerialParams params;
         params.portName = portName;
-        params.baudRate = static_cast<int>(BaudRate::B57600);
+        params.baudRate = 57600;
         return params;
     }
 

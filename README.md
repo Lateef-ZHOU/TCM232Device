@@ -1,3 +1,9 @@
+## 2026-11-17：固定波特率直接填写整数（用户定）
+
+Handle::parameters 直接填写 57600，删除 BaudRate 枚举依赖和转 int 的中转。仍为 57600/8N1、无流控；其他参数、文字输出、75 ms 发送队列、重连和关闭逻辑保持。使用相邻 HandleCore 源码联调，远端固定依赖不变，暂不推送。
+
+Windows/MSVC 完整 Device/QML Release 增量构建及既有 serial_delivery 1/1（6.56 秒）通过，覆盖 57600/8N1 构参、成帧、75 ms 队列及重连关闭；构建日志无编译/链接警告或错误。证据：build/baudrate-{build,test}.log。主程序 Release 增量构建和 8 秒离屏冒烟通过，stderr 与原字体提示基线一致；本轮未重复 qmllint、Linux/ARM 或实物验证。
+
 ## 2026-11-17：连接重置与输出缓冲（用户定）
 
 Handle::connOpen 保留 body_.clear() 和 discarding_ = false，分别清除旧半帧及超长行丢弃状态；删除 complete_.clear()。complete_ 只保活已校验的完整主体，下一有效帧通过 swap 替换后才交付，空行或校验失败不会重交旧结果。允许旧结果缓冲保留至后续更新或析构，不延长同步 span 的借用契约。发送、75 ms 队列节奏、重连和关闭逻辑不变；暂不推送。
@@ -62,7 +68,7 @@ SerialConn/SerialHandle 不再带 Framer 模板参数，SerialFramer concept 与
 
 ## 2026-11-14：温控发送直接检查 span（用户定）
 
-onTX 直接以 span::empty 和 std::ranges::any_of 检查非空单行主体，不再创建 QByteArray 借用适配；波特率枚举使用 static_cast<int>。仍拒绝包含 CR 或 LF 的命令，再补 CR 构造自有 vector 入队。首条立即发送、75 ms 间隔、末条冷却、重连和关闭清队列均保持。
+onTX 直接以 span::empty 和 std::ranges::any_of 检查非空单行主体，不再创建 QByteArray 借用适配；串口固定波特率为 57600。仍拒绝包含 CR 或 LF 的命令，再补 CR 构造自有 vector 入队。首条立即发送、75 ms 间隔、末条冷却、重连和关闭清队列均保持。
 
 Windows Release 独立构建、公开头与 serial_delivery 1/1 通过，补齐 LF 拒收验证，保留空命令、CR、队列所有权及启停覆盖。主程序 Release 增量构建与 8 秒离屏冒烟通过，stderr 与原字体基线一致。证据相邻主程序 build/tcm-spancheck-*.log 和 tcm-spancheck-smoke.json。仅本地提交，未推送、未操作板卡。
 
