@@ -1,3 +1,7 @@
+## 2026-11-17：网口连接参数收紧（用户定）
+
+Tcm232UdpDevice 构参时仅从所选网卡取 pcapDeviceName 与 hostMAC；名称/描述仍用于原 QML 选项，不随连接快照传递。本机 MAC 参与 PcapParams 默认比较。固定 IP、端口、业务命令与既有收发/ARP/关闭链保持，验证见主程序维护操作。本地源码覆盖，不推送、不更新板端。
+
 ## 2026-11-17：onTX 接入 vector 只读引用（用户定）
 
 onTX 输入统一为 const std::vector<unsigned char>&，同步传参不复制调用方数组；RX 仍用只读 span。命令检查、补回车和异步队列所有权保持；首条立即发送、75ms 间隔、末条冷却及断开清队列不变。 不新增成员状态；使用相邻本地 HandleCore 源码覆盖，远端锁定版本暂不变，不推送。Windows 完整配置 Release 与串口/设备/QML 综合测试 1/1 通过。 证据见主程序 docs/maintenance/validation.md 本轮记录。
