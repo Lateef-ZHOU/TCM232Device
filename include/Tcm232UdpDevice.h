@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <PcapHandle.h>
 #include "Tcm232DeviceT.h"
 
@@ -60,7 +61,7 @@ private:
     }
     static PcapParams parameters(const NetworkInterfaceInfo &network)
     {
-        return {network, IPv4(QByteArray::fromHex("c0a864c8")), IPv4(QByteArray::fromHex("c0a86464")), {},
+        return {network, PacketProtocol::IPv4Header::Address{std::array<unsigned char, 4>{192, 168, 100, 200}}, PacketProtocol::IPv4Header::Address{std::array<unsigned char, 4>{192, 168, 100, 100}}, {},
             55300, 55300}; // Windows 192.168.100.200 ↔ PetaLinux 192.168.100.100；不要求系统配置这些 IP。
     }
 };

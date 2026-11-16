@@ -1,3 +1,9 @@
+## 2026-11-17：网口地址迁移（用户定）
+
+Tcm232UdpDevice 的固定 IP 改为 PacketProtocol::IPv4Header::Address，从四字节 array 构造；业务地址、端口、75 ms 发送间隔、每秒查询及整轮绘图保持。采用相邻 HandleCore 的新协议，不增加旧地址兼容层。
+
+Windows 完整 QML 配置 Release 构建与 CTest 1/1 通过（串口、设备、QML 验证在同一入口），主程序集成及 8 秒离屏冒烟通过；Linux 桥接转发测试通过。证据为相邻主程序 build/pcap-vector-packet-tcm-{build,test}.log 及本轮主程序验证记录。未操作温控实物或更新板端；本地源码覆盖，不推送。
+
 ## 2026-11-15：网卡列表接入 vector（用户定）
 
 UDP 官邸直接缓存 const std::vector<NetworkInterfaceInfo>；拒绝负下标后按 size_t 比较和访问。选项顺序、首次枚举与字符串边界保持；75 ms 发送、每秒查询、整轮绘图、重连及关闭不变。
