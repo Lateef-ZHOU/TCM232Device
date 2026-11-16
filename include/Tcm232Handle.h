@@ -76,7 +76,6 @@ private:
     std::shared_ptr<SerialConn> connOpen(const SerialParams &params) final
     {
         body_.clear();
-        complete_.clear();
         discarding_ = false;
         return SerialHandle::connOpen(params);
     }
@@ -113,7 +112,7 @@ private:
         transmit_.start();
     }
 
-    // 仅收包线程使用；complete_ 保活裁决借用的完整主体，不复制字节。
+    // 仅收包线程使用；complete_ 每次交付前由新主体交换替换，并保活裁决借用的字节。
     QByteArray body_, complete_;
     bool discarding_ = false;
     mutable QTimer transmit_{this};

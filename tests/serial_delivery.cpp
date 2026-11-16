@@ -196,8 +196,10 @@ int main(int argc, char **argv)
     require(waitFor([&] { return !handle.isOpen(); }), "disconnect timeout");
     require(waitFor([&] { return handle.isOpen(); }), "auto reconnect timeout");
     require(FakeSerialPort::writes().size() == 5, "old command crossed reconnection");
-    FakeSerialPort::enqueue("\rTC1:TCOE=1\r");
-    require(handle.available.tryAcquire(1, 3000), "new connection did not receive line");
+    // 空行和坏校验不能重交旧 complete_；新主体一短一长，均不得拼接旧内容。
+    const QByteArray longReply = "SYSTEM:SYSSN=" + QByteArray(80, 's');
+    FakeSerialPort::enqueue("\rCMD:REPLY=1#00\rTC1:TCOE=1\r" + longReply + '\r');
+    require(handle.available.tryAcquire(2, 3000), "new connection did not receive short and long lines");
     int failures = 0;
     QObject::connect(&handle, &Tcm232::Handle::logMessage, &handle, [&](const std::string &utf8Message) { const QString message = QString::fromUtf8(utf8Message.data(), qsizetype(utf8Message.size()));
         if (message == QStringLiteral("串口发送失败")) ++failures;
@@ -207,7 +209,22 @@ int main(int argc, char **argv)
     require(failures == 1, "actual send failure not logged");
     handle.close();
     require(FakeSerialPort::livePorts() == 0, "reconnect port not released");
-    require(handle.received.size() == 4 && handle.received.back() == "TC1:TCOE=1", "partial line crossed reconnection");
+    require(handle.received == std::vector<QByteArray>{"TC1:TCACTTEMP=25.01", "CMD:REPLY=1@0",
+                "TC2:TCACTTEMP=24.90@0", "TC1:TCOE=1", longReply},
+            "partial line or completed result crossed reconnection");
+
+    require(handle.open(params) && waitFor([&] { return handle.isOpen(); }), "reopen before oversize line");
+    const int beforeOversize = FakeSerialPort::reads();
+    FakeSerialPort::enqueue(limit + 'x'); // 不补 CR，让旧连接停留在丢弃状态。
+    const int blocks = static_cast<int>((limit.size() + 1 + 255) / 256);
+    require(waitFor([&] { return FakeSerialPort::reads() >= beforeOversize + blocks; }), "oversize line not consumed");
+    FakeSerialPort::failRead();
+    require(waitFor([&] { return FakeSerialPort::opens() == 5 && handle.isOpen(); }), "oversize reconnect timeout");
+    FakeSerialPort::enqueue("TC1:TCOE=0\r"); // 首项不是 CR：旧丢弃状态若未重置，这一帧会丢失。
+    require(handle.available.tryAcquire(1, 3000), "discard state crossed reconnection");
+    handle.close();
+    require(handle.received.size() == 6 && handle.received.back() == "TC1:TCOE=0", "old long result survived as new data");
+    require(FakeSerialPort::livePorts() == 0 && FakeSerialPort::closes() == 5, "reconnected ports not released");
     FakeSerialPort::reset();
     {
         Probe dying;

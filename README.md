@@ -1,3 +1,11 @@
+## 2026-11-17：连接重置与输出缓冲（用户定）
+
+Handle::connOpen 保留 body_.clear() 和 discarding_ = false，分别清除旧半帧及超长行丢弃状态；删除 complete_.clear()。complete_ 只保活已校验的完整主体，下一有效帧通过 swap 替换后才交付，空行或校验失败不会重交旧结果。允许旧结果缓冲保留至后续更新或析构，不延长同步 span 的借用契约。发送、75 ms 队列节奏、重连和关闭逻辑不变；暂不推送。
+
+针对性验证：已有完整结果后断开重开，带半帧自动重连，再输入空行、坏校验及一短一长两条新报文，检查全部结果字节与顺序；另让旧连接停在超长行丢弃状态，重连后直接输入有效帧，不用前导 CR，验证丢弃状态重置。五个连接最终全部释放，既有 75 ms 发送与关闭清队列回归保持。
+
+Windows/MSVC 完整 Device/QML 配置 Release 增量构建、Tcm232Handle.h 单头 /W4 /WX 编译通过，CTest 1/1（6.54 秒，含串口、Device 和 QML）通过；构建无编译或链接警告。证据为 build/rx-result-reset-{build,test}.log、rx-result-reset-header-{configure,build}.log。Linux BridgeCore 构建和回归 4/4 通过，未重复 Linux 温控独立测试；主程序构建与冒烟见其维护操作。本轮没有操作实物或更新板端。
+
 ## 2026-11-17：串口连接参数只持端口名（用户定）
 
 Handle::parameters 接收 const std::string& portName，写入 SerialParams::portName；QML 入口继续做本地编码转换，枚举展示不变，不再为连接构造 SerialPortInfo。固定 57600/8N1、无流控、75 ms 队列节奏、每秒查询、重连与关闭保持。
