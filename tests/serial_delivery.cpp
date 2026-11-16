@@ -81,8 +81,8 @@ int main(int argc, char **argv)
 #else
     QCoreApplication app(argc, argv);
 #endif
-    const auto params = Tcm232::Handle::parameters({"controlled", {}});
-    require(params.baudRate == 57600 && params.dataBits == DataBits::D8
+    const auto params = Tcm232::Handle::parameters("controlled");
+    require(params.portName == "controlled" && params.baudRate == 57600 && params.dataBits == DataBits::D8
             && params.parity == SP_PARITY_NONE && params.stopBits == StopBits::One
             && params.flowControl == SP_FLOWCONTROL_NONE, "serial settings");
 

@@ -110,7 +110,7 @@ void verifyDevice()
                     ++values;
                 }
             }, Qt::QueuedConnection);
-        check(device.open(device.parameters({"controlled", {}})), "open");
+        check(device.open(device.parameters("controlled")), "open");
         check(waitFor([&]{ return device.isOpen(); }), "connection timeout");
         FakeSerialPort::enqueue("CMD:REPLY=1@0#7D\rTC2:TCTSCOEFF:0=25.07\rCMD:TCOE=0\r");
         check(waitFor([&]{ return replies == 1 && values == 2; }), "queued device signals");

@@ -1,3 +1,9 @@
+## 2026-11-17：串口连接参数只持端口名（用户定）
+
+Handle::parameters 接收 const std::string& portName，写入 SerialParams::portName；QML 入口继续做本地编码转换，枚举展示不变，不再为连接构造 SerialPortInfo。固定 57600/8N1、无流控、75 ms 队列节奏、每秒查询、重连与关闭保持。
+
+Windows/MSVC 完整 Device/QML 配置 Release 增量构建及公开头独立编译通过，CTest 1/1（5.43 秒）通过，包含协议、串口、设备与 QML 接收验证；Linux 桥接器串口转发回归通过。日志：build/serial-params-{build,test}.log；主程序构建与八秒冒烟见主程序 docs/maintenance/validation.md。未操作实物或更新板端，暂不推送。
+
 ## 2026-11-17：网口连接参数收紧（用户定）
 
 Tcm232UdpDevice 构参时仅从所选网卡取 pcapDeviceName 与 hostMAC；名称/描述仍用于原 QML 选项，不随连接快照传递。本机 MAC 参与 PcapParams 默认比较。固定 IP、端口、业务命令与既有收发/ARP/关闭链保持，验证见主程序维护操作。本地源码覆盖，不推送、不更新板端。

@@ -31,10 +31,10 @@ public:
         });
     }
 
-    [[nodiscard]] static SerialParams parameters(const SerialPortInfo &port)
+    [[nodiscard]] static SerialParams parameters(const std::string &portName)
     {
         SerialParams params;
-        params.portInfo = port;
+        params.portName = portName;
         params.baudRate = static_cast<int>(BaudRate::B57600);
         return params;
     }
