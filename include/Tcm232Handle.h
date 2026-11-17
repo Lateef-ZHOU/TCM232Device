@@ -17,7 +17,7 @@ class Handle : public SerialHandle<2 / 2>
 {
     Q_OBJECT
 public:
-    Handle()
+    explicit Handle(QObject *parent = nullptr) : SerialHandle(parent)
     {
         transmit_.setSingleShot(true);
         transmit_.setTimerType(Qt::PreciseTimer);
