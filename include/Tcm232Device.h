@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include "Tcm232DeviceT.h"
 #include "Tcm232Handle.h"
 
@@ -12,15 +13,15 @@ class Tcm232Device final
 #endif
 {
     Q_OBJECT
-    Q_PROPERTY(QString displayName MEMBER displayName CONSTANT)
-    Q_PROPERTY(QString subtitle MEMBER subtitle CONSTANT)
+    Q_PROPERTY(std::string displayName MEMBER displayName CONSTANT)
+    Q_PROPERTY(std::string subtitle MEMBER subtitle CONSTANT)
     Q_PROPERTY(bool isOpen READ isOpen)
     Q_PROPERTY(QVariant holder READ qmlHolder)
     using Base = Tcm232DeviceT<Tcm232::Handle>;
 public:
     static Tcm232Device *qmlAttachedProperties(QObject *owner) { return new Tcm232Device(owner); }
     explicit Tcm232Device(QObject *parent)
-        : Base(QStringLiteral("TCM232"), parent)
+        : Base("TCM232", parent)
     {
         static_assert(FinalDevice<Tcm232Device, decltype(&Tcm232Device::PreDestruction)>);
     }

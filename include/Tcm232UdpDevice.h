@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <array>
 #include <PcapHandle.h>
 #include "Tcm232DeviceT.h"
@@ -13,15 +14,15 @@ class Tcm232UdpDevice final
 #endif
 {
     Q_OBJECT
-    Q_PROPERTY(QString displayName MEMBER displayName CONSTANT)
-    Q_PROPERTY(QString subtitle MEMBER subtitle CONSTANT)
+    Q_PROPERTY(std::string displayName MEMBER displayName CONSTANT)
+    Q_PROPERTY(std::string subtitle MEMBER subtitle CONSTANT)
     Q_PROPERTY(bool isOpen READ isOpen)
     Q_PROPERTY(QVariant holder READ qmlHolder)
     Q_PROPERTY(QVariantMap connectionParameters READ connectionParameters CONSTANT)
     using Base = Tcm232DeviceT<PcapHandle>;
 public:
     static Tcm232UdpDevice *qmlAttachedProperties(QObject *owner) { return new Tcm232UdpDevice(owner); }
-    explicit Tcm232UdpDevice(QObject *parent) : Base(QStringLiteral("TCM232"), parent)
+    explicit Tcm232UdpDevice(QObject *parent) : Base("TCM232", parent)
     { static_assert(FinalDevice<Tcm232UdpDevice, decltype(&Tcm232UdpDevice::PreDestruction)>); }
     ~Tcm232UdpDevice() override { PreDestruction(); }
     [[nodiscard]] QVariantMap connectionParameters() const
