@@ -9,8 +9,8 @@ ModulePage {
     id: root
     required property Section connection
     readonly property string kind: "device"
-    readonly property string name: deviceState.displayName
-    readonly property string subtitle: deviceState.subtitle
+    readonly property string name: String(deviceState.displayName)
+    readonly property string subtitle: String(deviceState.subtitle)
     required property var deviceState
     readonly property list<int> tcCommands: [Tcm232Protocol.TCADJTEMP, Tcm232Protocol.TCACTTEMP, Tcm232Protocol.TCSW, Tcm232Protocol.TCOE, Tcm232Protocol.TCACTVOL, Tcm232Protocol.TCACTCUR, Tcm232Protocol.TCERRORSTATUS]
     readonly property list<int> fanCommands: [Tcm232Protocol.FANSTARTTEMP, Tcm232Protocol.FANACTTEMP, Tcm232Protocol.FANSPEED]
