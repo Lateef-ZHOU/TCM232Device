@@ -91,7 +91,7 @@ void verifyDevice()
           && emptyText.value.toString().isEmpty(), "empty text is a valid assignment value");
     static_assert(std::derived_from<Tcm232::Tcm232Device, Device<Tcm232::Handle>>);
     FakeSerialPort::reset();
-    const auto lock = std::make_shared<DeviceLock>(QStringLiteral("test"));
+    const auto lock = std::make_shared<DeviceLock>("test");
     int replies = 0, values = 0;
     {
         Tcm232::Tcm232Device device(nullptr);

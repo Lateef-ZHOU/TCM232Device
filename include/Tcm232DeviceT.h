@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <QString>
 #include <DeviceBase.h>
 #include "Tcm232Protocol.h"
 
@@ -19,7 +20,7 @@ public:
     QVariant qmlHolder() const
     {
         const auto owner = this->holder();
-        return owner ? QVariant(*owner) : QVariant();
+        return owner ? QVariant(QString::fromStdString(*owner)) : QVariant();
     }
     bool query(Tcm232::Module module, Tcm232::Command command)
     {
